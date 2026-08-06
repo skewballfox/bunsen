@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0](https://github.com/zspacelabs/bunsen/compare/bunsen-v0.30.1...bunsen-v0.31.0) - 2026-08-06
+
+### Other
+
+- *(tensor)* rename `to_data_convert` to `to_data_as` and `into_data_convert` to `into_data_as`, add `to_vec_as` and `into_vec_as` extensions for improved TensorData conversion methods ([#156](https://github.com/zspacelabs/bunsen/pull/156))
+- *(tensor)* rename `TensorDataIndexView` and `TensorDataIndexMutView` to `TensorDataView` and `TensorDataViewMut`, add `TensorDataViewExt` with `expect_view` and `try_view` methods, and update all references accordingly ([#155](https://github.com/zspacelabs/bunsen/pull/155))
+- *(tensor)* unify `to_data_convert` and `to_data_cast` methods across tensor operations, update usage in lbm2d_vis, conway_vis, and life2d implementations for consistency ([#154](https://github.com/zspacelabs/bunsen/pull/154))
+- *(tensor)* simplify `select_dim` signature by replacing generic type constraints with `impl AsIndex`, update related usage in `silero_vad` module ([#152](https://github.com/zspacelabs/bunsen/pull/152))
+- *(attention_mask)* replace `unsqueeze` and `unsqueeze_dim` with `unsqueeze_dims` for cleaner dimension handling ([#150](https://github.com/zspacelabs/bunsen/pull/150))
+- *(tensor)* rename `release` method to `extract` across tensor operations and update references for clarity ([#149](https://github.com/zspacelabs/bunsen/pull/149))
+- *(tensor)* replace `bounded_elem` with `in_range_scalar` and add `in_range` for improved range-checking flexibility ([#148](https://github.com/zspacelabs/bunsen/pull/148))
+
 ## [0.30.1](https://github.com/zspacelabs/bunsen/compare/bunsen-v0.30.0...bunsen-v0.30.1) - 2026-07-24
 
 ### Fixed
