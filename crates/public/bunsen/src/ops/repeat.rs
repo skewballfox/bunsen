@@ -2,7 +2,6 @@
 
 use burn::{
     Tensor,
-    prelude::Backend,
     tensor::AsIndex,
 };
 
@@ -43,14 +42,14 @@ use burn::{
 ///     .to_data(),
 ///     true);
 /// ```
-pub fn repeat_interleave<B: Backend, const R: usize, const R2: usize, D: AsIndex>(
-    input: Tensor<B, R>,
+pub fn repeat_interleave<const R: usize, const R2: usize, D: AsIndex>(
+    input: Tensor<R>,
     repeats: usize,
     dim: D,
-) -> Tensor<B, R> {
+) -> Tensor<R> {
     let dim = dim.expect_dim_index(R);
 
-    let x: Tensor<B, R2> = input.unsqueeze_dim(dim + 1);
+    let x: Tensor<R2> = input.unsqueeze_dim(dim + 1);
 
     let mut dims = x.dims();
     dims[dim + 1] = repeats;
@@ -73,12 +72,12 @@ mod tests {
         type B = CpuBackend;
         let device = default_device();
 
-        let input = Tensor::<B, 2>::from_data([[0., 1., 2.], [3., 4., 5.]], &device);
+        let input = Tensor::<2>::from_data([[0., 1., 2.], [3., 4., 5.]], &device);
 
         repeat_interleave::<_, 2, 3, _>(input.clone(), 3, 1)
             .to_data()
             .assert_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [0., 0., 0., 1., 1., 1., 2., 2., 2.],
                         [3., 3., 3., 4., 4., 4., 5., 5., 5.],
@@ -92,7 +91,7 @@ mod tests {
         repeat_interleave::<_, 2, 3, _>(input.clone(), 3, 0)
             .to_data()
             .assert_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [0., 1., 2.],
                         [0., 1., 2.],

@@ -2,8 +2,7 @@ use burn::{
     Tensor,
     config::Config,
     module::Module,
-    prelude::Backend,
-};
+    };
 
 use crate::kits::speech::silero_vad::SileroVad;
 
@@ -53,18 +52,18 @@ impl SileroVadContextMeta for SileroVadContextConfig {
 /// Built by [`SileroVadContextConfig`].
 /// Implements [`SileroVadContextMeta`].
 #[derive(Module, Debug)]
-pub struct SileroVadContext<B: Backend> {
+pub struct SileroVadContext {
     /// The sample rate of the context.
     pub sample_rate: usize,
 
     /// The preceding input context.
-    pub context: Tensor<B, 2>,
+    pub context: Tensor<2>,
 
     /// The current input state.
-    pub state: Tensor<B, 3>,
+    pub state: Tensor<3>,
 }
 
-impl<B: Backend> SileroVadContextMeta for SileroVadContext<B> {
+impl SileroVadContextMeta for SileroVadContext {
     fn sample_rate(&self) -> usize {
         self.sample_rate
     }
@@ -80,11 +79,11 @@ impl<B: Backend> SileroVadContextMeta for SileroVadContext<B> {
 
 impl SileroVadContextConfig {
     /// Initializes a new context.
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
-        vad: &SileroVad<B>,
-        device: &B::Device,
-    ) -> SileroVadContext<B> {
+        vad: &SileroVad,
+        device: &Device,
+    ) -> SileroVadContext {
         vad.init_context(self.batch_size, self.context_size, device)
     }
 }

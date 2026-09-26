@@ -4,19 +4,18 @@ use burn::{
     tensor::{
         Int,
         Tensor,
-        backend::Backend,
-    },
+        },
 };
 
 /// Builds an iota embedding.
 ///
 /// `weight[i, j] = i * d + j` - every row distinct, lookups hand-verifiable.
-pub fn iota_embedding<B: Backend>(
+pub fn iota_embedding(
     n: usize,
     d: usize,
-    device: &B::Device,
-) -> Embedding<B> {
-    let weight = Tensor::<B, 1, Int>::arange(0..(n * d) as i64, device)
+    device: &Device,
+) -> Embedding {
+    let weight = Tensor::<1, Int>::arange(0..(n * d) as i64, device)
         .float()
         .reshape([n, d]);
     Embedding {
@@ -28,12 +27,12 @@ pub fn iota_embedding<B: Backend>(
 ///
 /// Square identity (`num_embeddings == dim == n`): embedding acts as a one-hot
 /// passthrough.
-pub fn identity_embedding<B: Backend>(
+pub fn identity_embedding(
     n: usize,
-    device: &B::Device,
-) -> Embedding<B> {
+    device: &Device,
+) -> Embedding {
     Embedding {
-        weight: Param::from_tensor(Tensor::<B, 2>::eye(n, device)),
+        weight: Param::from_tensor(Tensor::<2>::eye(n, device)),
     }
 }
 
@@ -51,7 +50,7 @@ mod tests {
     fn test_iota_embedding() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let n = 3;
         let d = 4;
         let emb = iota_embedding::<PerformanceBackend>(n, d, &device);
@@ -77,7 +76,7 @@ mod tests {
     fn test_identity_embedding() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let n = 5;
         let emb = identity_embedding::<PerformanceBackend>(n, &device);
 

@@ -2,7 +2,6 @@ use burn::{
     Tensor,
     config::Config,
     prelude::{
-        Backend,
         Bool,
         Int,
     },
@@ -34,12 +33,12 @@ pub struct ConwayLife3DConfig {
 
 impl ConwayLife3DConfig {
     /// Initializes a [`ConwayLife3DState`] module.
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
-        device: &B::Device,
-    ) -> ConwayLife3DState<B> {
+        device: &Device,
+    ) -> ConwayLife3DState {
         ConwayLife3DState {
-            state: Tensor::<B, 3, Int>::zeros(&self.shape, device).bool(),
+            state: Tensor::<3, Int>::zeros(&self.shape, device).bool(),
             rules: self.rules.clone(),
         }
     }
@@ -54,22 +53,22 @@ impl ConwayLife3DConfig {
 /// generation at a time.
 ///
 /// Built by [`ConwayLife3DConfig`].
-pub struct ConwayLife3DState<B: Backend> {
+pub struct ConwayLife3DState {
     /// The current state of the board.
-    pub state: Tensor<B, 3, Bool>,
+    pub state: Tensor<3, Bool>,
 
     /// The ruleset to use.
     pub rules: ConwayRules,
 }
 
-impl<B: Backend> ConwayLife3DState<B> {
+impl ConwayLife3DState {
     fn shape(&self) -> [usize; 3] {
         self.state.shape().dims()
     }
 }
 
-impl<B: Backend> ConwaySim<B> for ConwayLife3DState<B> {
-    fn device(&self) -> B::Device {
+impl ConwaySim<B> for ConwayLife3DState {
+    fn device(&self) -> Device {
         self.state.device()
     }
 
@@ -81,7 +80,7 @@ impl<B: Backend> ConwaySim<B> for ConwayLife3DState<B> {
             return;
         }
 
-        let noise: Tensor<B, 3, Bool> = Tensor::<B, 3>::random(
+        let noise: Tensor<3, Bool> = Tensor::<3>::random(
             self.shape(),
             Distribution::Bernoulli(density),
             &self.device(),
@@ -115,7 +114,7 @@ mod tests {
     fn test_smoke() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let steps = 100;
         let grid_size = 20;
@@ -127,7 +126,7 @@ mod tests {
                 keep: 2..4,
             },
         };
-        let mut game: ConwayLife3DState<B> = config.init(&device);
+        let mut game: ConwayLife3DState = config.init(&device);
         game.fuzz(0.05);
 
         for _ in 0..steps {

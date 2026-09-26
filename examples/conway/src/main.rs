@@ -10,7 +10,6 @@ use bunsen::{
         TensorOpExt,
     },
 };
-use burn::prelude::Backend;
 use clap::Parser;
 use piston::{
     EventLoop,
@@ -36,7 +35,7 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<B: Backend>(&self) -> BunsenResult<()> {
+    pub fn run(&self) -> BunsenResult<()> {
         match self {
             Commands::Visual(cmd) => cmd.run::<B>(),
             Commands::Benchmark(cmd) => cmd.run::<B>(),

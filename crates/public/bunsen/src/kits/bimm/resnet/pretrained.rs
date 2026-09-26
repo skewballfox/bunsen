@@ -387,7 +387,6 @@ pub static PREFAB_RESNET_MAP: StaticPreFabMap<ResNetContractConfig> = StaticPreF
 mod construct {
     use std::sync::Arc;
 
-    use burn::prelude::Backend;
 
     use super::{
         CHECKPOINT,
@@ -479,7 +478,7 @@ mod construct {
     }
 
     impl Construct for ResNetConstruct {
-        type Built<B: Backend> = ResNet<B>;
+        type Built = ResNet;
 
         const KIT: &'static str = RESNET_KIT;
 
@@ -490,14 +489,14 @@ mod construct {
         }
 
         /// Initialises the config's model and reads the checkpoint into it.
-        fn construct<B: Backend>(
+        fn construct(
             &self,
             model: &PretrainedRef,
             loaded: &LoadedResources,
-            device: &B::Device,
-        ) -> BunsenResult<Arc<ResNet<B>>> {
+            device: &Device,
+        ) -> BunsenResult<Arc<ResNet>> {
             let config = self.config_for(model)?;
-            let resnet: ResNet<B> = config.try_init(device)?;
+            let resnet: ResNet = config.try_init(device)?;
             Ok(Arc::new(
                 resnet.load_pytorch_weights(loaded.expect(CHECKPOINT)?)?,
             ))

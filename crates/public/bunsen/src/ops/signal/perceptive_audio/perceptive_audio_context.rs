@@ -13,8 +13,7 @@ use burn::{
     Tensor,
     config::Config,
     module::Module,
-    prelude::Backend,
-};
+    };
 
 use crate::{
     errors::{
@@ -59,15 +58,15 @@ pub enum StreamPhase {
 /// [`RangeClamp`](crate::ops::signal::perceptive_audio::RangeClamp) — is
 /// deliberately not part of this pipeline; apply it once to the joined result.
 #[derive(Module, Debug)]
-pub struct PerceptiveAudioConversionContext<B: Backend> {
+pub struct PerceptiveAudioConversionContext {
     /// The analysis constants; shared, never mutated.
-    converter: PerceptiveAudioConverter<B>,
+    converter: PerceptiveAudioConverter,
 
     /// The samples a future frame still needs: `[batch, carry_len]`.
     ///
     /// `None` before the first chunk. In steady state `carry_len` is
     /// invariant — see [`transform`](Self::transform).
-    carry: Option<Tensor<B, 2>>,
+    carry: Option<Tensor<2>>,
 
     #[module(skip)]
     batch_size: usize,
@@ -76,7 +75,7 @@ pub struct PerceptiveAudioConversionContext<B: Backend> {
     phase: StreamPhase,
 }
 
-impl<B: Backend> PerceptiveAudioConverterMeta for PerceptiveAudioConversionContext<B> {
+impl PerceptiveAudioConverterMeta for PerceptiveAudioConversionContext {
     fn sample_rate(&self) -> usize {
         self.converter.sample_rate()
     }
@@ -106,7 +105,7 @@ impl<B: Backend> PerceptiveAudioConverterMeta for PerceptiveAudioConversionConte
     }
 }
 
-impl<B: Backend> PerceptiveAudioConversionContext<B> {
+impl PerceptiveAudioConversionContext {
     /// The number of independent streams; fixed at construction.
     pub fn batch_size(&self) -> usize {
         self.batch_size
@@ -118,12 +117,12 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     }
 
     /// The converter supplying the analysis constants.
-    pub fn converter(&self) -> &PerceptiveAudioConverter<B> {
+    pub fn converter(&self) -> &PerceptiveAudioConverter {
         &self.converter
     }
 
     /// The carried samples, if any: `[batch, carry_len]`.
-    pub fn carry(&self) -> Option<&Tensor<B, 2>> {
+    pub fn carry(&self) -> Option<&Tensor<2>> {
         self.carry.as_ref()
     }
 
@@ -166,8 +165,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// to produce a frame.
     pub fn transform(
         self,
-        waves: Tensor<B, 2>,
-    ) -> BunsenResult<(Tensor<B, 3>, Self)> {
+        waves: Tensor<2>,
+    ) -> BunsenResult<(Tensor<3>, Self)> {
         let (x, this) = self.t_stage_extend(waves)?;
         let (x, this) = this.t_stage_preproc(x);
         let (x, this) = this.t_stage_frame(x);
@@ -188,7 +187,7 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     ///
     /// # Returns
     /// `[batch, frames, n_mels]` tail frames.
-    pub fn finish(self) -> Option<Tensor<B, 3>> {
+    pub fn finish(self) -> Option<Tensor<3>> {
         let carry = self.carry.clone()?;
 
         let pad = self.end_padding().pad_len(self.n_fft());
@@ -254,8 +253,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, samples]` -> `[batch, extended]`.
     pub(crate) fn t_stage_extend(
         mut self,
-        waves: Tensor<B, 2>,
-    ) -> BunsenResult<(Tensor<B, 2>, Self)> {
+        waves: Tensor<2>,
+    ) -> BunsenResult<(Tensor<2>, Self)> {
         let [batch, samples] = waves.dims();
 
         if batch != self.batch_size {
@@ -341,8 +340,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, extended]` -> `[batch, extended]`.
     pub(crate) fn t_stage_preproc(
         self,
-        x: Tensor<B, 2>,
-    ) -> (Tensor<B, 2>, Self) {
+        x: Tensor<2>,
+    ) -> (Tensor<2>, Self) {
         (x, self)
     }
 
@@ -351,8 +350,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, extended]` -> `[batch, frames, n_fft]`.
     pub(crate) fn t_stage_frame(
         self,
-        x: Tensor<B, 2>,
-    ) -> (Tensor<B, 3>, Self) {
+        x: Tensor<2>,
+    ) -> (Tensor<3>, Self) {
         let framed = self.converter.frame(x);
         (framed, self)
     }
@@ -362,8 +361,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, frames, n_fft]` -> `[batch, frames, n_bins]`.
     pub(crate) fn t_stage_spectrum(
         self,
-        x: Tensor<B, 3>,
-    ) -> (Tensor<B, 3>, Self) {
+        x: Tensor<3>,
+    ) -> (Tensor<3>, Self) {
         let spectrum = self.converter.spectrum(x);
         (spectrum, self)
     }
@@ -373,8 +372,8 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, frames, n_bins]` -> `[batch, frames, n_mels]`.
     pub(crate) fn t_stage_mel(
         self,
-        x: Tensor<B, 3>,
-    ) -> (Tensor<B, 3>, Self) {
+        x: Tensor<3>,
+    ) -> (Tensor<3>, Self) {
         let mels = self.converter.mel(x);
         (mels, self)
     }
@@ -384,14 +383,14 @@ impl<B: Backend> PerceptiveAudioConversionContext<B> {
     /// `[batch, frames, n_mels]` -> `[batch, frames, n_mels]`.
     pub(crate) fn t_stage_compress(
         self,
-        x: Tensor<B, 3>,
-    ) -> (Tensor<B, 3>, Self) {
+        x: Tensor<3>,
+    ) -> (Tensor<3>, Self) {
         let mels = self.converter.compress(x);
         (mels, self)
     }
 }
 
-impl<B: Backend> PerceptiveAudioConverter<B> {
+impl PerceptiveAudioConverter {
     /// Opens a streaming conversion over these constants.
     ///
     /// # Arguments
@@ -399,7 +398,7 @@ impl<B: Backend> PerceptiveAudioConverter<B> {
     pub fn new_context(
         &self,
         batch_size: usize,
-    ) -> PerceptiveAudioConversionContext<B> {
+    ) -> PerceptiveAudioConversionContext {
         assert_ne!(batch_size, 0, "MelConverter batch_size must be non-zero");
 
         PerceptiveAudioConversionContext {
@@ -434,10 +433,10 @@ mod tests {
     };
 
     /// Builds a `[batch, samples]` tensor from a row-major host buffer.
-    fn from_rows<B: Backend>(
+    fn from_rows(
         rows: &[Vec<f64>],
         device: &burn::prelude::Device<B>,
-    ) -> Tensor<B, 2> {
+    ) -> Tensor<2> {
         let samples = rows[0].len();
         Tensor::from_data(
             burn::prelude::TensorData::new(rows.concat(), [rows.len(), samples]),
@@ -467,9 +466,9 @@ mod tests {
     fn test_context_meta_and_lifecycle() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let opts = PerceptiveAudioConverterOptions::default();
-        let conv: PerceptiveAudioConverter<B> = opts.try_init(&device).ok_or_panic();
+        let conv: PerceptiveAudioConverter = opts.try_init(&device).ok_or_panic();
 
         let ctx = conv.new_context(2);
 
@@ -504,9 +503,9 @@ mod tests {
     fn test_frame_accounting_over_a_30s_window() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let opts = PerceptiveAudioConverterOptions::default();
-        let conv: PerceptiveAudioConverter<B> = opts.try_init(&device).ok_or_panic();
+        let conv: PerceptiveAudioConverter = opts.try_init(&device).ok_or_panic();
 
         // 30 s at the default 16 kHz sample rate.
         let samples = 480_000;
@@ -533,8 +532,8 @@ mod tests {
     fn test_running_frame_count_is_invariant() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
         let hop = conv.hop();
@@ -572,8 +571,8 @@ mod tests {
     fn test_chunked_transform_is_a_homomorphism() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
 
@@ -606,7 +605,7 @@ mod tests {
                 at += n;
             }
 
-            let joined: Tensor<B, 3> = Tensor::cat(pieces, 1);
+            let joined: Tensor<3> = Tensor::cat(pieces, 1);
             assert_eq!(
                 joined.dims(),
                 whole_mels.dims(),
@@ -627,8 +626,8 @@ mod tests {
     fn test_batch_rows_are_independent() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
 
@@ -663,8 +662,8 @@ mod tests {
     fn test_transform_rejects_bad_input() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
 
@@ -690,10 +689,10 @@ mod tests {
     fn test_finish_respects_end_padding() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         // No end padding: nothing to flush.
-        let unpadded: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let unpadded: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .with_end_padding(PaddingMode::None)
             .try_init(&device)
             .ok_or_panic();
@@ -708,7 +707,7 @@ mod tests {
 
         // Zero end padding produces the same frame count as reflect; only the
         // values differ.
-        let zero: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let zero: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .with_end_padding(PaddingMode::Zero)
             .try_init(&device)
             .ok_or_panic();
@@ -726,8 +725,8 @@ mod tests {
     fn test_stage_stack_matches_transform() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
 
@@ -754,8 +753,8 @@ mod tests {
     fn test_extend_stage_carry_contents() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let conv: PerceptiveAudioConverter<B> = PerceptiveAudioConverterOptions::default()
+        let _memory = DeviceMemoryGuard::new(&device);
+        let conv: PerceptiveAudioConverter = PerceptiveAudioConverterOptions::default()
             .try_init(&device)
             .ok_or_panic();
         let (n_fft, hop) = (conv.n_fft(), conv.hop());

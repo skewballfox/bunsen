@@ -29,12 +29,11 @@ use std::fmt::Debug;
 use burn::{
     Tensor,
     module::Module,
-    prelude::Backend,
-};
+    };
 use dyn_clone::DynClone;
 
 /// The maximum over each row: `[batch, frames, n_mels]` to `[batch]`.
-fn row_max<B: Backend>(x: Tensor<B, 3>) -> Tensor<B, 1> {
+fn row_max(x: Tensor<3>) -> Tensor<1> {
     x.max_dims(&[1, 2]).reshape([-1])
 }
 
@@ -44,7 +43,7 @@ fn row_max<B: Backend>(x: Tensor<B, 3>) -> Tensor<B, 1> {
 ///
 /// Implementors are `Clone`, through [`DynClone`], because the stream
 /// context that holds one boxed is `Clone`. Nothing else is asked of them.
-pub trait StreamClampPolicy<B: Backend>: Send + Sync + Debug + DynClone {
+pub trait StreamClampPolicy: Send + Sync + Debug + DynClone {
     /// Offers arriving frames to the policy. The arrival path, and the only
     /// place a policy may mutate.
     ///
@@ -52,7 +51,7 @@ pub trait StreamClampPolicy<B: Backend>: Send + Sync + Debug + DynClone {
     /// * `frames` - `[batch, frames, n_mels]` log-mels, as they arrive.
     fn observe(
         &mut self,
-        frames: Tensor<B, 3>,
+        frames: Tensor<3>,
     );
 
     /// The reference maximum for a window about to be packaged.
@@ -67,8 +66,8 @@ pub trait StreamClampPolicy<B: Backend>: Send + Sync + Debug + DynClone {
     /// `[batch]`, one reference per row.
     fn reference(
         &self,
-        window: Tensor<B, 3>,
-    ) -> Tensor<B, 1>;
+        window: Tensor<3>,
+    ) -> Tensor<1>;
 }
 
 // `Box<dyn ClampPolicy<B>>: Clone`, through the concrete policy's `Clone`
@@ -80,18 +79,18 @@ dyn_clone::clone_trait_object!(<B: Backend> StreamClampPolicy<B>);
 
 /// A boxed policy is a policy, so a context may be generic over a concrete
 /// policy or hold a dynamic one; either way it is one type parameter.
-impl<B: Backend> StreamClampPolicy<B> for Box<dyn StreamClampPolicy<B>> {
+impl StreamClampPolicy<B> for Box<dyn StreamClampPolicy<B>> {
     fn observe(
         &mut self,
-        frames: Tensor<B, 3>,
+        frames: Tensor<3>,
     ) {
         (**self).observe(frames);
     }
 
     fn reference(
         &self,
-        window: Tensor<B, 3>,
-    ) -> Tensor<B, 1> {
+        window: Tensor<3>,
+    ) -> Tensor<1> {
         (**self).reference(window)
     }
 }
@@ -104,17 +103,17 @@ impl<B: Backend> StreamClampPolicy<B> for Box<dyn StreamClampPolicy<B>> {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PerWindow;
 
-impl<B: Backend> StreamClampPolicy<B> for PerWindow {
+impl StreamClampPolicy<B> for PerWindow {
     fn observe(
         &mut self,
-        _frames: Tensor<B, 3>,
+        _frames: Tensor<3>,
     ) {
     }
 
     fn reference(
         &self,
-        window: Tensor<B, 3>,
-    ) -> Tensor<B, 1> {
+        window: Tensor<3>,
+    ) -> Tensor<1> {
         row_max(window)
     }
 }
@@ -130,33 +129,33 @@ impl<B: Backend> StreamClampPolicy<B> for PerWindow {
 /// with nothing observed this degrades to [`PerWindow`] rather than to
 /// something wrong.
 #[derive(Module, Debug)]
-pub struct RunningMaxClamp<B: Backend> {
+pub struct RunningMaxClamp {
     /// `[batch]` running maximum, or `None` before the first observation.
-    seen: Option<Tensor<B, 1>>,
+    seen: Option<Tensor<1>>,
 }
 
-impl<B: Backend> Default for RunningMaxClamp<B> {
+impl Default for RunningMaxClamp {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<B: Backend> RunningMaxClamp<B> {
+impl RunningMaxClamp {
     /// A policy that has seen nothing yet.
     pub fn new() -> Self {
         Self { seen: None }
     }
 
     /// The running maximum, `[batch]`, if anything has been observed.
-    pub fn seen(&self) -> Option<&Tensor<B, 1>> {
+    pub fn seen(&self) -> Option<&Tensor<1>> {
         self.seen.as_ref()
     }
 }
 
-impl<B: Backend> StreamClampPolicy<B> for RunningMaxClamp<B> {
+impl StreamClampPolicy<B> for RunningMaxClamp {
     fn observe(
         &mut self,
-        frames: Tensor<B, 3>,
+        frames: Tensor<3>,
     ) {
         let arriving = row_max(frames);
         self.seen = Some(match self.seen.take() {
@@ -167,8 +166,8 @@ impl<B: Backend> StreamClampPolicy<B> for RunningMaxClamp<B> {
 
     fn reference(
         &self,
-        window: Tensor<B, 3>,
-    ) -> Tensor<B, 1> {
+        window: Tensor<3>,
+    ) -> Tensor<1> {
         let own = row_max(window);
         match &self.seen {
             Some(seen) => seen.clone().max_pair(own),
@@ -194,15 +193,15 @@ mod tests {
 
     /// `[2, 2, 2]`: two rows, two frames, two mels, from a flat
     /// list.
-    fn frames(values: [f64; 8]) -> Tensor<B, 3> {
+    fn frames(values: [f64; 8]) -> Tensor<3> {
         Tensor::from_data(
             TensorData::new(values.to_vec(), [2, 2, 2]),
             &Default::default(),
         )
     }
 
-    fn to_vec(t: Tensor<B, 1>) -> Vec<f64> {
-        t.into_data_as::<f64>().to_vec().unwrap()
+    fn to_vec(t: Tensor<1>) -> Vec<f64> {
+        t.into_data_as::<f64>().try_to_vec().unwrap()
     }
 
     #[test]
@@ -217,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_max_seen_runs_over_observations() {
-        let mut policy = RunningMaxClamp::<B>::new();
+        let mut policy = RunningMaxClamp::new();
         assert!(policy.seen().is_none());
 
         policy.observe(frames([0.0, -3.0, -1.0, -20.0, 5.0, 4.0, -9.0, 1.0]));
@@ -238,7 +237,7 @@ mod tests {
     /// With nothing observed, `MaxSeen` is `PerWindow`.
     #[test]
     fn test_max_seen_degrades_to_per_window() {
-        let policy = RunningMaxClamp::<B>::new();
+        let policy = RunningMaxClamp::new();
         let window = frames([0.0, -3.0, -1.0, -20.0, 5.0, 4.0, -9.0, 1.0]);
 
         assert_close_to_vec(
@@ -251,7 +250,7 @@ mod tests {
     /// `reference` takes `&self`, so asking twice is asking once.
     #[test]
     fn test_reference_does_not_move() {
-        let mut policy = RunningMaxClamp::<B>::new();
+        let mut policy = RunningMaxClamp::new();
         policy.observe(frames([1.0; 8]));
         let window = frames([0.0, -3.0, -1.0, -20.0, 5.0, 4.0, -9.0, 1.0]);
 

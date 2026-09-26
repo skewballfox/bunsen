@@ -4,7 +4,6 @@ use burn::{
     Tensor,
     config::Config,
     prelude::{
-        Backend,
         Bool,
         Int,
     },
@@ -64,14 +63,14 @@ pub struct ScaledDotProductAttentionConfig {
 ///
 /// # Returns
 /// - the attention result.
-pub fn scaled_dot_product_attention<B: Backend>(
-    q: Tensor<B, 4>,
-    k: Tensor<B, 4>,
-    v: Tensor<B, 4>,
-    bias: Option<Tensor<B, 2>>,
-    mask: Option<Tensor<B, 2, Bool>>,
+pub fn scaled_dot_product_attention(
+    q: Tensor<4>,
+    k: Tensor<4>,
+    v: Tensor<4>,
+    bias: Option<Tensor<2>>,
+    mask: Option<Tensor<2, Bool>>,
     config: ScaledDotProductAttentionConfig,
-) -> Tensor<B, 4> {
+) -> Tensor<4> {
     let [b, h_q, _t_q, d] = unpack_shape_contract!(["B", "H_q", "T_q", "D"], &q.dims());
     let [h_kv] = unpack_shape_contract!(
         ["B", "H_kv", "T_k", "D"],
@@ -90,7 +89,7 @@ pub fn scaled_dot_product_attention<B: Backend>(
     let mut v = v;
     if config.enable_gqa {
         let v_repeats = h_q / h_kv;
-        v = repeat::repeat_interleave::<B, 4, 5, _>(v, v_repeats, 1);
+        v = repeat::repeat_interleave::<4, 5, _>(v, v_repeats, 1);
     }
 
     attn_weight.matmul(v)
@@ -104,13 +103,13 @@ pub fn scaled_dot_product_attention<B: Backend>(
 /// - `bias`: optional additive bias, as `[T_q, T_k]`.
 /// - `mask`: optional bias mask, as `[T_q, T_k]`.
 /// - `config`: attention config.
-pub fn sdpa_attn_weight<B: Backend>(
-    q: Tensor<B, 4>,
-    k: Tensor<B, 4>,
-    bias: Option<Tensor<B, 2>>,
-    mask: Option<Tensor<B, 2, Bool>>,
+pub fn sdpa_attn_weight(
+    q: Tensor<4>,
+    k: Tensor<4>,
+    bias: Option<Tensor<2>>,
+    mask: Option<Tensor<2, Bool>>,
     config: ScaledDotProductAttentionConfig,
-) -> Tensor<B, 4> {
+) -> Tensor<4> {
     let [b, h_q, t_q, d] = unpack_shape_contract!(["B", "H_q", "T_q", "D"], &q.dims());
     let [h_k, t_k] = unpack_shape_contract!(
         ["B", "H_k", "T_k", "D"],
@@ -126,7 +125,7 @@ pub fn sdpa_attn_weight<B: Backend>(
 
     if config.enable_gqa {
         let k_repeats = h_q / h_k;
-        k = repeat::repeat_interleave::<B, 4, 5, _>(k, k_repeats, 1);
+        k = repeat::repeat_interleave::<4, 5, _>(k, k_repeats, 1);
     }
 
     let scale_factor = config.scale.unwrap_or(1.0 / (q.dims()[3] as f64).sqrt());
@@ -136,7 +135,7 @@ pub fn sdpa_attn_weight<B: Backend>(
     let mut attn_weight = attn_weight + attn_bias.unsqueeze();
 
     if let Some(prob) = config.dropout
-        && (config.enable_dropout_during_inference || B::ad_enabled(&attn_weight.device()))
+        && (config.enable_dropout_during_inference || attn_weight.device().is_autodiff())
     {
         attn_weight = dropout(prob, attn_weight);
     }
@@ -157,19 +156,19 @@ pub fn sdpa_attn_weight<B: Backend>(
 ///
 /// # Returns
 /// - a `[l, s]` attention bias tensor.
-pub fn sdpa_bias<B: Backend>(
+pub fn sdpa_bias(
     l: usize,
     s: usize,
     causal: bool,
-    bias: Option<Tensor<B, 2>>,
-    mask: Option<Tensor<B, 2, Bool>>,
+    bias: Option<Tensor<2>>,
+    mask: Option<Tensor<2, Bool>>,
     dtype: DType,
-    device: &B::Device,
-) -> Tensor<B, 2> {
-    let mut attn_bias = Tensor::<B, 2>::zeros([l, s], device).cast(dtype);
+    device: &Device,
+) -> Tensor<2> {
+    let mut attn_bias = Tensor::<2>::zeros([l, s], device).cast(dtype);
     if causal {
         attn_bias = attn_bias.mask_fill(
-            Tensor::<B, 2, Int>::ones([l, s], device)
+            Tensor::<2, Int>::ones([l, s], device)
                 .tril(0)
                 .bool()
                 .bool_not(),
@@ -201,7 +200,7 @@ mod tests {
     fn test_scaled_dot_product_attention_bias() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let dtype = DType::F32;
 
         let l = 3;
@@ -212,7 +211,7 @@ mod tests {
         sdpa_bias::<B>(l, s, false, None, None, dtype, &device)
             .to_data()
             .assert_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [0., 0., 0., 0., 0.],
                         [0., 0., 0., 0., 0.],
@@ -228,7 +227,7 @@ mod tests {
         sdpa_bias::<B>(l, s, true, None, None, dtype, &device)
             .to_data()
             .assert_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [0., ni, ni, ni, ni],
                         [0., 0., ni, ni, ni],
@@ -240,7 +239,7 @@ mod tests {
                 false,
             );
 
-        let bias = Tensor::<B, 2>::from_data(
+        let bias = Tensor::<2>::from_data(
             [
                 [1., 2., 3., 4., 5.],
                 [6., 7., 8., 9., 10.],
@@ -253,7 +252,7 @@ mod tests {
         sdpa_bias::<B>(l, s, false, Some(bias.clone()), None, dtype, &device)
             .to_data()
             .assert_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [1., 2., 3., 4., 5.],
                         [6., 7., 8., 9., 10.],
@@ -265,7 +264,7 @@ mod tests {
                 false,
             );
 
-        let mask = Tensor::<B, 2, Bool>::from_data(
+        let mask = Tensor::<2, Bool>::from_data(
             [
                 [true, true, true, true, false],
                 [true, true, true, true, true],
@@ -286,7 +285,7 @@ mod tests {
         )
         .to_data()
         .assert_eq(
-            &Tensor::<B, 2>::from_data(
+            &Tensor::<2>::from_data(
                 [
                     [1., 2., 3., 4., ni],
                     [6., 7., 8., 9., 10.],
@@ -310,7 +309,7 @@ mod tests {
         )
         .to_data()
         .assert_eq(
-            &Tensor::<B, 2>::from_data(
+            &Tensor::<2>::from_data(
                 [
                     [1., ni, ni, ni, ni],
                     [6., 7., ni, ni, ni],

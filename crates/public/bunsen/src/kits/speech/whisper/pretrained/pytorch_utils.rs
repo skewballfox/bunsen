@@ -5,8 +5,7 @@ use std::path::{
 
 use burn::{
     config::Config,
-    prelude::Backend,
-};
+    };
 use burn_store::{
     ModuleSnapshot,
     ModuleStore,
@@ -98,30 +97,26 @@ impl PytorchWhisperScanner {
 
         let keys = store.keys().map_err(BunsenError::external)?;
 
-        let [d_model, n_mels] = store
-            .get_snapshot("encoder.head.blocks.0.conv.weight")
+        let [d_model, n_mels] = store.get_tensor("encoder.head.blocks.0.conv.weight")
             .map_err(BunsenError::external)?
             .unwrap()
             .shape
             .dims();
 
-        let [vocab_size, _] = store
-            .get_snapshot("decoder.token_embedding.weight")
+        let [vocab_size, _] = store.get_tensor("decoder.token_embedding.weight")
             .map_err(BunsenError::external)?
             .unwrap()
             .shape
             .dims();
 
-        let [k, _] = store
-            .get_snapshot("encoder.positional_embedding")
+        let [k, _] = store.get_tensor("encoder.positional_embedding")
             .map_err(BunsenError::external)?
             .unwrap()
             .shape
             .dims();
         let max_audio_ctx = k * AUDIO_ENCODER_STRIDE;
 
-        let [max_text_ctx, _] = store
-            .get_snapshot("decoder.positional_embedding")
+        let [max_text_ctx, _] = store.get_tensor("decoder.positional_embedding")
             .map_err(BunsenError::external)?
             .unwrap()
             .shape
@@ -148,14 +143,14 @@ impl PytorchWhisperScanner {
     }
 
     /// Loads a pytorch whisper model from a checkpoint.
-    pub fn load<B: Backend, P: AsRef<Path>>(
+    pub fn load<P: AsRef<Path>>(
         &self,
         path: P,
-        device: &B::Device,
-    ) -> BunsenResult<(Whisper<B>, WhisperApiConfig)> {
+        device: &Device,
+    ) -> BunsenResult<(Whisper, WhisperApiConfig)> {
         let (mut store, cfg) = self.scan_cfg(path)?;
 
-        let module: Whisper<B> = cfg.try_init(device)?;
+        let module: Whisper = cfg.try_init(device)?;
 
         // `burn-store` reads PyTorch storage without honoring strides, and
         // every `Linear` weight in an OpenAI Whisper checkpoint is a

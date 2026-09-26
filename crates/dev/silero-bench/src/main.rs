@@ -55,7 +55,7 @@ fn main() -> BunsenResult<()> {
     println!("* device: {:?}", device);
 
     println!("* SileroVad");
-    let vad: SileroVad<B> = SileroVadCollection::load_pretrained(&device)?
+    let vad: SileroVad = SileroVadCollection::load_pretrained(&device)?
         .try_branch(args.sample_rate)?
         .clone();
 
@@ -67,7 +67,7 @@ fn main() -> BunsenResult<()> {
     println!("* {:?}", spec);
 
     // [steps, 1, samples=chunk_size]
-    let chunk_seq: Tensor<B, 3> = {
+    let chunk_seq: Tensor<3> = {
         // Pad the audio to the chunk size.
         let tail_len = wav_vec.len() % chunk_size;
         if tail_len != 0 {
@@ -76,7 +76,7 @@ fn main() -> BunsenResult<()> {
         }
 
         // Convert to tensor.
-        let samples = Tensor::<B, 1>::from_floats(wav_vec.as_slice(), &device);
+        let samples = Tensor::<1>::from_floats(wav_vec.as_slice(), &device);
 
         // Chunk the audio into chunks of size `chunk_size`.
         samples.reshape([-1, 1, chunk_size as isize])

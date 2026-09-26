@@ -1,6 +1,5 @@
 use burn::{
     prelude::{
-        Backend,
         Int,
         Tensor,
     },
@@ -27,10 +26,10 @@ use burn::{
 /// respective indices.
 #[inline(always)]
 #[must_use]
-pub fn window_index_offset_grid<B: Backend>(
+pub fn window_index_offset_grid(
     window_shape: [usize; 2],
-    device: &B::Device,
-) -> Tensor<B, 3, Int> {
+    device: &Device,
+) -> Tensor<3, Int> {
     let [h, w] = window_shape;
     assert_ne!(h, 0, "Height must be non-zero");
     assert_ne!(w, 0, "Width must be non-zero");
@@ -63,13 +62,13 @@ pub fn window_index_offset_grid<B: Backend>(
 /// offsets.
 #[inline(always)]
 #[must_use]
-pub fn window_relative_offset_grid<B: Backend>(
+pub fn window_relative_offset_grid(
     window_shape: [usize; 2],
-    device: &B::Device,
-) -> Tensor<B, 3> {
-    let x: Tensor<B, 3> = window_index_offset_grid(window_shape, device).float();
+    device: &Device,
+) -> Tensor<3> {
+    let x: Tensor<3> = window_index_offset_grid(window_shape, device).float();
 
-    let d = Tensor::<B, 1, Int>::from_data(window_shape, device) - 1;
+    let d = Tensor::<1, Int>::from_data(window_shape, device) - 1;
 
     x.div(d.unsqueeze().float())
 }
@@ -91,11 +90,11 @@ pub fn window_relative_offset_grid<B: Backend>(
 /// relative offsets.
 #[inline(always)]
 #[must_use]
-pub fn window_log1p_relative_offset_grid<B: Backend>(
+pub fn window_log1p_relative_offset_grid(
     window_shape: [usize; 2],
     base: f64,
-    device: &B::Device,
-) -> Tensor<B, 3> {
+    device: &Device,
+) -> Tensor<3> {
     let x = window_relative_offset_grid(window_shape, device);
 
     let x = x * base;
@@ -140,29 +139,29 @@ pub fn window_log1p_relative_offset_grid<B: Backend>(
 /// ```
 #[inline(always)]
 #[must_use]
-pub fn window_attention_relative_position_index<B: Backend>(
+pub fn window_attention_relative_position_index(
     window_shape: [usize; 2],
-    device: &B::Device,
-) -> Tensor<B, 2, Int> {
+    device: &Device,
+) -> Tensor<2, Int> {
     let [h, w] = window_shape;
     let h = h as i64;
     let w = w as i64;
     let hw = h * w;
 
     // 2, h, w
-    let positions: Tensor<B, 3, Int> = meshgrid_stack(
+    let positions: Tensor<3, Int> = meshgrid_stack(
         &[
-            Tensor::<B, 1, Int>::arange(0..h, device),
-            Tensor::<B, 1, Int>::arange(0..w, device),
+            Tensor::<1, Int>::arange(0..h, device),
+            Tensor::<1, Int>::arange(0..w, device),
         ],
         IndexPos::First,
     );
 
     // 2, h*w
-    let coords: Tensor<B, 2, Int> = positions.flatten(1, 2);
+    let coords: Tensor<2, Int> = positions.flatten(1, 2);
 
     // 2, h*w, h*w
-    let a: Tensor<B, 3, Int> = coords
+    let a: Tensor<3, Int> = coords
         .clone()
         .reshape([2, hw as usize, 1])
         .expand([2, hw, hw]);
@@ -173,16 +172,16 @@ pub fn window_attention_relative_position_index<B: Backend>(
     // 2, h*w, h*w - relative offset.
     let rel = a - b;
 
-    let rel: Tensor<B, 3, Int> = rel.permute([1, 2, 0]);
+    let rel: Tensor<3, Int> = rel.permute([1, 2, 0]);
 
-    let d = Tensor::<B, 1, Int>::from_data(window_shape, device) - 1;
+    let d = Tensor::<1, Int>::from_data(window_shape, device) - 1;
 
-    let rel: Tensor<B, 3, Int> = rel + d.unsqueeze();
+    let rel: Tensor<3, Int> = rel + d.unsqueeze();
 
-    let s = Tensor::<B, 1, Int>::from_data([2 * window_shape[1] - 1, 1], device);
+    let s = Tensor::<1, Int>::from_data([2 * window_shape[1] - 1, 1], device);
     let rel = rel.mul(s.unsqueeze());
 
-    let rel: Tensor<B, 2, Int> = rel.sum_dim(2).squeeze_dim::<2>(2);
+    let rel: Tensor<2, Int> = rel.sum_dim(2).squeeze_dim::<2>(2);
 
     rel
 }
@@ -247,7 +246,7 @@ mod tests {
     fn test_window_log_offset_grid() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let base = 8.0;
 
         let actual = window_log1p_relative_offset_grid::<B>([3, 2], base, &device);

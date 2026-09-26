@@ -36,7 +36,6 @@ use burn::{
         },
     },
     prelude::{
-        Backend,
         Config,
         Tensor,
     },
@@ -203,11 +202,11 @@ impl ResNetContractConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, ResNet<B>> for ResNetContractConfig {
+impl ModuleInit<ResNet> for ResNetContractConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ResNet<B>> {
+        device: &Device,
+    ) -> BunsenResult<ResNet> {
         self.to_structure().try_init(device)
     }
 }
@@ -316,11 +315,11 @@ impl ResNetStructureConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, ResNet<B>> for ResNetStructureConfig {
+impl ModuleInit<ResNet> for ResNetStructureConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ResNet<B>> {
+        device: &Device,
+    ) -> BunsenResult<ResNet> {
         let head_planes = self.layers.last().unwrap().out_planes();
 
         let module = ResNet {
@@ -357,22 +356,22 @@ impl<B: Backend> ModuleInit<B, ResNet<B>> for ResNetStructureConfig {
 ///
 /// Built by [`ResNetContractConfig`] (high-level) or [`ResNetStructureConfig`].
 #[derive(Module, Debug)]
-pub struct ResNet<B: Backend> {
+pub struct ResNet {
     /// Input conv/norm.
-    pub input_cb: ConvBlock2d<B>,
+    pub input_cb: ConvBlock2d,
     /// Input pool.
     pub input_pool: MaxPool2d,
 
     /// Layers.
-    pub layers: Vec<LayerBlock<B>>,
+    pub layers: Vec<LayerBlock>,
 
     /// Head pooling.
     pub output_pool: AdaptiveAvgPool2d,
     /// Head classifier.
-    pub output_fc: Linear<B>,
+    pub output_fc: Linear,
 }
 
-impl<B: Backend> ResNet<B> {
+impl ResNet {
     /// Debug Printout.
     pub fn debug_print(&self) {
         for (idx, layer) in self.layers.iter().enumerate() {
@@ -390,8 +389,8 @@ impl<B: Backend> ResNet<B> {
     /// Forward pass.
     pub fn forward(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 2> {
+        input: Tensor<4>,
+    ) -> Tensor<2> {
         // Prep block
         let x = self.input_cb.forward(input);
         let x = self.input_pool.forward(x);
@@ -459,7 +458,7 @@ impl<B: Backend> ResNet<B> {
 
         let net_num_blocks = self.layers.iter().map(|b| b.len()).sum::<usize>();
         let mut net_block_idx = 0;
-        let mut update_drop_path = |_idx: usize, block: ResidualBlock<B>| {
+        let mut update_drop_path = |_idx: usize, block: ResidualBlock| {
             // stochastic depth linear decay rule
             let block_dpr = drop_path_rate * (net_block_idx as f64) / ((net_num_blocks - 1) as f64);
             net_block_idx += 1;
@@ -530,7 +529,7 @@ impl<B: Backend> ResNet<B> {
         f: F,
     ) -> Self
     where
-        F: Fn(Vec<LayerBlock<B>>) -> Vec<LayerBlock<B>>,
+        F: Fn(Vec<LayerBlock>) -> Vec<LayerBlock>,
     {
         Self {
             layers: f(self.layers),
@@ -564,7 +563,7 @@ mod tests {
     /// Fetches a checkpoint through the kit's factory and reads it into
     /// its prefab's model.
     #[cfg(all(feature = "store", feature = "fetch"))]
-    fn test_load_pytorch<B: Backend>(spec: &str) -> BunsenResult<()> {
+    fn test_load_pytorch(spec: &str) -> BunsenResult<()> {
         use crate::{
             data::pretrained::{
                 PretrainedCache,
@@ -576,7 +575,7 @@ mod tests {
         let device = default_device();
         let cache = PretrainedCache::new(PretrainedCacheOptions::default())?;
         let loaded = default_resnet_factory()?.load::<B>(spec, &cache, &device)?;
-        let _model: &ResNet<B> = &loaded.handle;
+        let _model: &ResNet = &loaded.handle;
         Ok(())
     }
 
@@ -610,7 +609,7 @@ mod tests {
     fn test_to_layers_50_bottleneck() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let cfg = ResNetContractConfig::new(RESNET50_BLOCKS.to_vec(), 1000).with_bottleneck(true);
         let layers = cfg.to_layer_contracts();
@@ -628,7 +627,7 @@ mod tests {
         println!("{:#?}", blocks);
         println!();
 
-        let model: ResNet<B> = cfg.to_structure().init(&device);
+        let model: ResNet = cfg.to_structure().init(&device);
 
         model.debug_print();
 

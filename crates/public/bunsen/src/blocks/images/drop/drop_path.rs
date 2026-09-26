@@ -13,7 +13,6 @@ use burn::{
     config::Config,
     module::Module,
     prelude::{
-        Backend,
         Tensor,
     },
     tensor::Distribution,
@@ -34,19 +33,19 @@ use crate::support::validators;
 ///
 /// * Output tensor with the same shape as the input tensor.
 #[must_use]
-pub fn drop_path<B: Backend, const D: usize>(
-    x: Tensor<B, D>,
+pub fn drop_path<const D: usize>(
+    x: Tensor<D>,
     drop_prob: f64,
     training: bool,
     scale_by_keep: bool,
-) -> Tensor<B, D> {
+) -> Tensor<D> {
     _drop_path_sample(
         x,
         drop_prob,
         training,
         scale_by_keep,
         |shape, keep_prob, device| {
-            Tensor::<B, D>::random(shape, Distribution::Bernoulli(keep_prob), device)
+            Tensor::<D>::random(shape, Distribution::Bernoulli(keep_prob), device)
         },
     )
 }
@@ -68,13 +67,13 @@ pub fn drop_path<B: Backend, const D: usize>(
 /// * Output tensor with the same shape as the input tensor.
 #[inline(always)]
 #[must_use]
-fn _drop_path_sample<B: Backend, const D: usize>(
-    x: Tensor<B, D>,
+fn _drop_path_sample<const D: usize>(
+    x: Tensor<D>,
     drop_prob: f64,
     training: bool,
     scale_by_keep: bool,
-    sample: fn([usize; D], f64, &B::Device) -> Tensor<B, D>,
-) -> Tensor<B, D> {
+    sample: fn([usize; D], f64, &Device) -> Tensor<D>,
+) -> Tensor<D> {
     validators::expect_probability(drop_prob);
 
     if !training || drop_prob == 0.0 {
@@ -173,11 +172,11 @@ impl DropPathMeta for DropPath {
 impl DropPath {
     /// Applies `drop_path` pass on the input tensor.
     #[must_use]
-    pub fn forward<B: Backend, const D: usize>(
+    pub fn forward<const D: usize>(
         &self,
-        input: Tensor<B, D>,
-    ) -> Tensor<B, D> {
-        let training = B::ad_enabled(&input.device());
+        input: Tensor<D>,
+    ) -> Tensor<D> {
+        let training = input.device().is_autodiff();
         drop_path(input, self.drop_prob, training, self.scale_by_keep)
     }
 
@@ -197,13 +196,13 @@ impl DropPath {
     /// connection applied.
     #[inline]
     #[must_use]
-    pub fn with_skip<B: Backend, const D: usize, F>(
+    pub fn with_skip<const D: usize, F>(
         &self,
-        x: Tensor<B, D>,
+        x: Tensor<D>,
         f: F,
-    ) -> Tensor<B, D>
+    ) -> Tensor<D>
     where
-        F: FnOnce(Tensor<B, D>) -> Tensor<B, D>,
+        F: FnOnce(Tensor<D>) -> Tensor<D>,
     {
         x.clone() + self.forward(f(x))
     }
@@ -236,7 +235,7 @@ mod tests {
 
         let module = config.init();
 
-        let input = Tensor::<B, 4>::random([2, 3, 4, 5], Distribution::Uniform(0.0, 1.0), &device);
+        let input = Tensor::<4>::random([2, 3, 4, 5], Distribution::Uniform(0.0, 1.0), &device);
         let output = module.forward(input.clone());
 
         assert_eq!(input.dims(), output.dims());
@@ -250,7 +249,7 @@ mod tests {
         let n = 3;
         let shape = [n, 2, 4];
 
-        let x = Tensor::<B, 3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
+        let x = Tensor::<3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
 
         // No-op case: not training and drop_prob = 0.0
         let training = false;
@@ -268,7 +267,7 @@ mod tests {
         let n = 3;
         let shape = [n, 2, 4];
 
-        let x = Tensor::<B, 3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
+        let x = Tensor::<3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
 
         // No-op case: not training and drop_prob = 0.0
         let training = false;
@@ -282,7 +281,7 @@ mod tests {
             |shape, keep_prob, device| {
                 assert_eq!(shape, [3, 1, 1]);
                 assert_eq!(keep_prob, 1.0);
-                Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
+                Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
             },
         );
         res.to_data().assert_eq(&x.to_data(), true);
@@ -299,7 +298,7 @@ mod tests {
             |shape, keep_prob, device| {
                 assert_eq!(shape, [3, 1, 1]);
                 assert_eq!(keep_prob, 1.0);
-                Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
+                Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
             },
         );
         res.to_data().assert_eq(&x.to_data(), true);
@@ -316,11 +315,11 @@ mod tests {
             |shape, keep_prob, device| {
                 assert_eq!(shape, [3, 1, 1]);
                 assert_eq!(keep_prob, 0.5);
-                Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
+                Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
             },
         );
         res.to_data().assert_eq(
-            &(x.clone() * Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], &device))
+            &(x.clone() * Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], &device))
                 .to_data(),
             true,
         );
@@ -338,11 +337,11 @@ mod tests {
             |shape, keep_prob, device| {
                 assert_eq!(shape, [3, 1, 1]);
                 assert_eq!(keep_prob, 0.5);
-                Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
+                Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], device)
             },
         );
         res.to_data().assert_eq(
-            &(x.clone() * Tensor::<B, 3>::from_data([[[1.0]], [[0.0]], [[1.0]]], &device))
+            &(x.clone() * Tensor::<3>::from_data([[[1.0]], [[0.0]], [[1.0]]], &device))
                 .div_scalar(keep_prob)
                 .to_data(),
             true,
@@ -366,7 +365,7 @@ mod tests {
 
         let device = default_device();
         let shape = [2, 3, 4];
-        let x = Tensor::<B, 3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
+        let x = Tensor::<3>::random(shape, Distribution::Uniform(0.0, 1.0), &device);
 
         // TODO(crutcher): work out how to enable/disable training mode in
         // tests.

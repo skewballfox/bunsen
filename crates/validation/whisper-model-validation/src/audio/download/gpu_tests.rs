@@ -29,15 +29,13 @@ use bunsen::{
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         Device,
         Int,
         TensorData,
     },
     tensor::{
         Tolerance,
-        backend::BackendTypes,
-    },
+        },
 };
 
 use crate::{
@@ -61,7 +59,7 @@ use crate::{
 };
 
 type B = PerformanceBackend;
-type F = <B as BackendTypes>::FloatElem;
+type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
 /// The prompt and stop token, derived from the layout rather than written
 /// down: `<|startoftranscript|> <|en|> <|transcribe|> <|notimestamps|>`, then
@@ -76,10 +74,10 @@ fn decode_config(table: &Vocab) -> GreedyDecodeConfig {
 
 /// Splits log-mels into the encoder's fixed windows, zero-padding
 /// the last.
-fn windows_of<B: Backend>(
-    mels: Tensor<B, 3>,
+fn windows_of(
+    mels: Tensor<3>,
     device: &Device<B>,
-) -> Vec<Tensor<B, 3>> {
+) -> Vec<Tensor<3>> {
     let frames = mels.dims()[2];
     (0..frames.div_ceil(N_FRAMES))
         .map(|w| {
@@ -104,9 +102,9 @@ fn windows_of<B: Backend>(
 ///
 /// The export is KV-cache-free, so the whole prefix is re-fed every
 /// step — which is slow, and exactly why bunsen has a cache.
-fn greedy_reference<B: Backend>(
+fn greedy_reference(
     decoder: &reference::DecoderModel<B>,
-    xa: Tensor<B, 3>,
+    xa: Tensor<3>,
     device: &Device<B>,
     config: &GreedyDecodeConfig,
 ) -> Vec<i64> {
@@ -115,7 +113,7 @@ fn greedy_reference<B: Backend>(
 
     for _ in 0..224 {
         let len = prefix.len();
-        let tokens: Tensor<B, 2, Int> =
+        let tokens: Tensor<2, Int> =
             Tensor::from_data(TensorData::new(prefix.clone(), [1, len]), device);
 
         let picked: Vec<i64> = decoder
@@ -124,9 +122,7 @@ fn greedy_reference<B: Backend>(
             .slice_dim(1, (len - 1) as isize..len as isize)
             .argmax(2)
             .into_data()
-            .convert::<i64>()
-            .to_vec()
-            .unwrap();
+            .convert::<i64>().try_to_vec().unwrap();
 
         if picked[0] == config.eot_token {
             break;
@@ -144,7 +140,7 @@ fn greedy_reference<B: Backend>(
 #[serial_test::serial]
 fn test_bunsen_agrees_with_openai_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);
@@ -191,7 +187,7 @@ fn test_bunsen_agrees_with_openai_reference() {
 #[serial_test::serial]
 fn test_onnx_encoder_matches_bunsen_on_real_audio() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let reference = reference::EncoderModel::<B>::load_pretrained(&device);
     let ours = bunsen_model(&device);
@@ -215,7 +211,7 @@ fn test_onnx_encoder_matches_bunsen_on_real_audio() {
 #[serial_test::serial]
 fn test_onnx_reference_transcribes_real_audio() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let reference_enc = reference::EncoderModel::<B>::load_pretrained(&device);
@@ -263,7 +259,7 @@ fn test_onnx_reference_transcribes_real_audio() {
 #[serial_test::serial]
 fn test_onnx_reference_and_bunsen_transcribe_alike() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let reference_enc = reference::EncoderModel::<B>::load_pretrained(&device);
@@ -308,7 +304,7 @@ fn test_onnx_reference_and_bunsen_transcribe_alike() {
 #[serial_test::serial]
 fn test_bunsen_accuracy_against_transcript() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);
@@ -341,8 +337,8 @@ fn test_bunsen_accuracy_against_transcript() {
 
 /// One window's decode under `config` and `filters`, per window of the clip.
 fn decode_filtered(
-    model: &Whisper<B>,
-    mels: Tensor<B, 3>,
+    model: &Whisper,
+    mels: Tensor<3>,
     config: &DecodeConfig,
     filters: &[Arc<dyn LogitFilter<B>>],
 ) -> Vec<Vec<i64>> {
@@ -365,7 +361,7 @@ fn decode_filtered(
 #[serial_test::serial]
 fn test_bunsen_agrees_with_openai_reference_under_default_filters() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);
@@ -413,7 +409,7 @@ fn test_bunsen_agrees_with_openai_reference_under_default_filters() {
 #[serial_test::serial]
 fn test_bunsen_beam_agrees_with_openai_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);
@@ -460,7 +456,7 @@ fn test_bunsen_beam_agrees_with_openai_reference() {
 #[serial_test::serial]
 fn test_bunsen_timestamps_agree_with_openai_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);
@@ -514,7 +510,7 @@ fn test_bunsen_timestamps_agree_with_openai_reference() {
 #[serial_test::serial]
 fn test_bunsen_driver_transcribes_like_openai() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let driver = WhisperStreamDriverConfig::new()
@@ -609,7 +605,7 @@ fn test_bunsen_driver_transcribes_like_openai() {
 #[serial_test::serial]
 fn test_bunsen_detects_the_language() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
 
     let table = vocab();
     let model = bunsen_model::<B>(&device);

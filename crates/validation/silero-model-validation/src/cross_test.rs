@@ -31,8 +31,7 @@ mod tests {
         tensor::{
             Distribution,
             Tolerance,
-            backend::BackendTypes,
-        },
+            },
     };
 
     use crate::reference::ReferenceModel;
@@ -41,12 +40,12 @@ mod tests {
     #[serial_test::serial]
     fn test_reference_model_forward_cross_test() {
         type B = PerformanceBackend;
-        type F = <B as BackendTypes>::FloatElem;
+        type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
-        let sc: SileroVadCollection<B> =
+        let sc: SileroVadCollection =
             SileroVadCollection::load_pretrained(&device).ok_or_panic();
 
         let r_mod: ReferenceModel<B> = ReferenceModel::load_pretrained(&device);
@@ -61,7 +60,7 @@ mod tests {
             }
 
             let input =
-                Tensor::<B, 2>::random([batch, vad.chunk_size()], Distribution::Default, &device);
+                Tensor::<2>::random([batch, vad.chunk_size()], Distribution::Default, &device);
             let state = vad.init_state(batch, &device);
 
             // ([batch], [2, batch, d_hidden])
@@ -95,16 +94,16 @@ mod tests {
 
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
-        let vad: SileroVad<B> = SileroVadCollection::load_pretrained(&device)?
+        let vad: SileroVad = SileroVadCollection::load_pretrained(&device)?
             .try_branch(sample_rate)?
             .clone();
 
         let mut wav_vec = load_audio_mono_sr(wav_path, sample_rate)?;
 
         // [steps, 1, samples=chunk_size]
-        let chunk_seq: Tensor<B, 3> = {
+        let chunk_seq: Tensor<3> = {
             let chunk_size = vad.chunk_size();
 
             // Pad the audio to the chunk size.
@@ -115,7 +114,7 @@ mod tests {
             }
 
             // Convert to tensor.
-            let samples = Tensor::<B, 1>::from_floats(wav_vec.as_slice(), &device);
+            let samples = Tensor::<1>::from_floats(wav_vec.as_slice(), &device);
 
             // Chunk the audio into chunks of size `chunk_size`.
             samples.reshape([-1, 1, chunk_size as isize])

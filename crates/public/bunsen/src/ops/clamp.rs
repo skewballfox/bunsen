@@ -7,7 +7,6 @@ use burn::{
         ModuleDisplayDefault,
     },
     prelude::{
-        Backend,
         Tensor,
     },
 };
@@ -87,10 +86,10 @@ impl ClampOp {
     }
 
     /// Applies the clamp.
-    pub fn clamp<B: Backend, const D: usize>(
+    pub fn clamp<const D: usize>(
         &self,
-        tensor: Tensor<B, D>,
-    ) -> Tensor<B, D> {
+        tensor: Tensor<D>,
+    ) -> Tensor<D> {
         match (self.min, self.max) {
             (Some(min), Some(max)) => tensor.clamp(min, max),
             (Some(min), None) => tensor.clamp_min(min),
@@ -146,7 +145,7 @@ mod tests {
                 max: None,
             }
         );
-        let tensor = Tensor::<B, 1>::from_data([-1.0, 0.0, 1.0], &device);
+        let tensor = Tensor::<1>::from_data([-1.0, 0.0, 1.0], &device);
         let tensor = cfg.clamp(tensor);
         tensor
             .to_data()
@@ -160,7 +159,7 @@ mod tests {
                 max: Some(0.5),
             }
         );
-        let tensor = Tensor::<B, 1>::from_data([-1.0, 0.0, 1.0], &device);
+        let tensor = Tensor::<1>::from_data([-1.0, 0.0, 1.0], &device);
         let tensor = cfg.clamp(tensor);
         tensor
             .to_data()

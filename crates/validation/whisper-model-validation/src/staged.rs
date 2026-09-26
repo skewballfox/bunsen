@@ -23,14 +23,13 @@ use burn::{
     prelude::*,
     tensor::{
         Tolerance,
-        backend::BackendTypes,
-    },
+        },
 };
 
 use super::*;
 
 type B = PerformanceBackend;
-type F = <B as BackendTypes>::FloatElem;
+type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
 /// The reference model loads, runs, and is deterministic.
 ///
@@ -40,13 +39,13 @@ type F = <B as BackendTypes>::FloatElem;
 #[serial_test::serial]
 fn test_reference_encoder_runs() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
     let model = reference::EncoderModel::<B>::load_pretrained(&device);
 
     let out = model.forward(synthetic_mels::<B>(&device));
     assert_eq!(out.dims(), [1, N_FRAMES / 2, D_MODEL]);
 
-    let values: Vec<f32> = out.clone().into_data().convert::<f32>().to_vec().unwrap();
+    let values: Vec<f32> = out.clone().into_data().convert::<f32>().try_to_vec().unwrap();
     assert!(
         values.iter().all(|v| v.is_finite()),
         "the reference encoder produced a non-finite value",
@@ -69,8 +68,8 @@ fn test_reference_encoder_runs() {
 #[serial_test::serial]
 fn test_bunsen_encoder_matches_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
-    let mels: Tensor<B, 3> = synthetic_mels::<B>(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
+    let mels: Tensor<3> = synthetic_mels::<B>(&device);
 
     let reference = reference::EncoderModel::<B>::load_pretrained(&device).forward(mels.clone());
 
@@ -111,7 +110,7 @@ fn test_bunsen_encoder_matches_reference() {
 /// Takes the device rather than making one, so that the caller can bind a
 /// [`DeviceMemoryGuard`] over it *before* the weights land — the guard has to
 /// outlive the model to reclaim the pages the model sat in.
-fn load_bunsen(device: &burn::prelude::Device<B>) -> Whisper<B> {
+fn load_bunsen(device: &burn::prelude::Device<B>) -> Whisper {
     let bundle = load_base::<B>(device);
 
     // OpenAI ships these checkpoints in fp16; the reference graph is f32.
@@ -126,7 +125,7 @@ fn load_bunsen(device: &burn::prelude::Device<B>) -> Whisper<B> {
 /// The decoder inputs both implementations see.
 fn decoder_inputs(
     device: &burn::prelude::Device<B>
-) -> (Tensor<B, 2, burn::tensor::Int>, Tensor<B, 3>) {
+) -> (Tensor<2, burn::tensor::Int>, Tensor<3>) {
     let tokens = Tensor::from_data(TensorData::new(TOKENS.to_vec(), [1, TOKENS.len()]), device);
     (tokens, synthetic_encoder_output::<B>(device))
 }
@@ -137,7 +136,7 @@ fn decoder_inputs(
 #[serial_test::serial]
 fn test_bunsen_decoder_matches_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
     let model = load_bunsen(&device);
     let (tokens, xa) = decoder_inputs(&device);
 
@@ -163,7 +162,7 @@ fn test_bunsen_decoder_matches_reference() {
 #[serial_test::serial]
 fn test_bunsen_decoder_argmax_matches_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
     let model = load_bunsen(&device);
     let (tokens, xa) = decoder_inputs(&device);
 
@@ -172,13 +171,11 @@ fn test_bunsen_decoder_argmax_matches_reference() {
         .0;
     let ours = model.forward_decoder(tokens, xa);
 
-    let pick = |t: Tensor<B, 3>| -> Vec<i64> {
+    let pick = |t: Tensor<3>| -> Vec<i64> {
         t.argmax(2)
             .flatten::<1>(0, 2)
             .into_data()
-            .convert::<i64>()
-            .to_vec()
-            .unwrap()
+            .convert::<i64>().try_to_vec().unwrap()
     };
 
     assert_eq!(

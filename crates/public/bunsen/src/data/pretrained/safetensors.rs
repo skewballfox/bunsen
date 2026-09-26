@@ -31,7 +31,6 @@ use std::{
     },
 };
 
-use burn::prelude::Backend;
 use burn_store::{
     ModuleSnapshot,
     SafetensorsStore,
@@ -262,7 +261,7 @@ impl SafetensorsCheckpoint {
     /// [`BunsenError::External`] from the store: a file that cannot be
     /// read, a tensor whose shape does not fit its parameter;
     /// [`BunsenError::Invalid`] naming the parameters no shard held.
-    pub fn load_into<B: Backend, M: ModuleSnapshot<B>>(
+    pub fn load_into<M: ModuleSnapshot<B>>(
         &self,
         module: &mut M,
         configure: impl Fn(SafetensorsStore) -> SafetensorsStore,

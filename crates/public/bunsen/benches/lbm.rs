@@ -45,10 +45,10 @@ fn bench_lbm_d2q9(c: &mut Criterion) {
     let relaxation = RelaxationParam::Omega(1.5);
 
     for dtype in [F32, F64] {
-        let dist = Tensor::<B, 4>::random([n, n, 3, 3], Distribution::Default, &device);
+        let dist = Tensor::<4>::random([n, n, 3, 3], Distribution::Default, &device);
         let dist = dist.cast(dtype);
 
-        let solid_mask = Tensor::<B, 2, Bool>::full([n, n], false, &device);
+        let solid_mask = Tensor::<2, Bool>::full([n, n], false, &device);
 
         let lbm_tables = LbmTables::for_dist(&dist);
 

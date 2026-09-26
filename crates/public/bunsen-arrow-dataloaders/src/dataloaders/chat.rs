@@ -42,7 +42,8 @@
 //!     tok.clone(),
 //!     dl_config.clone(),
 //! );
-//! let validation_data_loader: ChatDataLoader<B::InnerBackend> =
+//! // TODO(burn 0.22 migration): this example predates ChatDataLoader losing its backend generic entirely -- rewrite for the non-generic API.
+//! let validation_data_loader =
 //!     ChatDataLoader::new(validation_paths, None, &device, tok.clone(), dl_config);
 //! ```
 use std::{
@@ -63,7 +64,7 @@ use burn::{
         Progress,
     },
     prelude::{
-        Backend,
+        Device,
         TensorData,
     },
 };
@@ -91,12 +92,12 @@ use crate::{
 /// (Parquet read -> column select -> tokenize -> dense pack -> optional
 /// shuffle -> tensor materialization) and exposes the shared
 /// [`EpochStats`] used for progress reporting.
-pub struct ChatDataLoaderIterator<B: Backend> {
+pub struct ChatDataLoaderIterator {
     stats: Arc<EpochStats>,
-    inner: Box<dyn Iterator<Item = Tensor<B, 2, burn::prelude::Int>>>,
+    inner: Box<dyn Iterator<Item = Tensor<2, burn::prelude::Int>>>,
 }
 
-impl<B: Backend> ChatDataLoaderIterator<B> {
+impl ChatDataLoaderIterator {
     /// Builds the streaming pipeline for one epoch.
     ///
     /// ## Arguments
@@ -109,7 +110,7 @@ impl<B: Backend> ChatDataLoaderIterator<B> {
     ///   to the packed blocks; `None` preserves source order.
     /// * `text_column` - Name of the UTF-8 column in each shard to tokenize.
     pub fn new(
-        device: B::Device,
+        device: Device,
         tokenizer: Arc<Tokenizer<u32>>,
         shard_paths: Vec<PathBuf>,
         block_options: DenseTokenBlocksOptions,
@@ -170,7 +171,7 @@ impl<B: Backend> ChatDataLoaderIterator<B> {
 
         let tensors = shuffle.map(move |result| {
             let batch = &result.unwrap();
-            let tensor: Tensor<B, 2, burn::prelude::Int> = Tensor::from_ints(
+            let tensor: Tensor<2, burn::prelude::Int> = Tensor::from_ints(
                 TensorData::new(batch.iter().flatten().copied().collect(), shape),
                 &device,
             );
@@ -192,16 +193,16 @@ impl<B: Backend> ChatDataLoaderIterator<B> {
     }
 }
 
-impl<B: Backend> Iterator for ChatDataLoaderIterator<B> {
-    type Item = Tensor<B, 2, burn::prelude::Int>;
+impl Iterator for ChatDataLoaderIterator {
+    type Item = Result<Tensor<2, burn::prelude::Int>, burn::data::dataset::DatasetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        self.inner.next().map(Ok)
     }
 }
 
-impl<B: Backend> DataLoaderIterator<Tensor<B, 2, burn::prelude::Int>>
-    for ChatDataLoaderIterator<B>
+impl DataLoaderIterator<Tensor<2, burn::prelude::Int>>
+    for ChatDataLoaderIterator
 {
     fn progress(&self) -> Progress {
         self.stats.progress()
@@ -216,15 +217,15 @@ impl<B: Backend> DataLoaderIterator<Tensor<B, 2, burn::prelude::Int>>
 /// blocks; without an `rng` the loader is deterministic and returns shards
 /// (and packed blocks) in their input order.
 #[derive(Clone)]
-pub struct ChatDataLoader<B: Backend> {
+pub struct ChatDataLoader {
     shard_paths: Vec<PathBuf>,
     rng: Option<Arc<Mutex<dyn rand::Rng + Send>>>,
-    device: B::Device,
+    device: Device,
     tokenizer: Arc<Tokenizer<u32>>,
     block_options: DenseTokenBlocksOptions,
 }
 
-impl<B: Backend> ChatDataLoader<B> {
+impl ChatDataLoader {
     /// Builds a new chat data loader.
     ///
     /// ## Arguments
@@ -238,7 +239,7 @@ impl<B: Backend> ChatDataLoader<B> {
     pub fn new(
         files: Vec<PathBuf>,
         rng: Option<Arc<Mutex<dyn rand::Rng + Send>>>,
-        device: &B::Device,
+        device: &Device,
         tokenizer: Arc<Tokenizer<u32>>,
         block_options: DenseTokenBlocksOptions,
     ) -> Self {
@@ -252,7 +253,7 @@ impl<B: Backend> ChatDataLoader<B> {
     }
 
     /// Starts a new epoch.
-    pub fn start_epoch(&self) -> ChatDataLoaderIterator<B> {
+    pub fn start_epoch(&self) -> ChatDataLoaderIterator {
         let mut shard_paths = self.shard_paths.clone();
         if let Some(mutex) = &self.rng {
             let mut rng = mutex.lock().unwrap();
@@ -280,11 +281,9 @@ impl<B: Backend> ChatDataLoader<B> {
     }
 }
 
-impl<B: Backend> DataLoader<B, Tensor<B, 2, burn::prelude::Int>> for ChatDataLoader<B>
-where
-    B: Backend,
+impl DataLoader<Tensor<2, burn::prelude::Int>> for ChatDataLoader
 {
-    fn iter(&self) -> Box<dyn DataLoaderIterator<Tensor<B, 2, burn::prelude::Int>>> {
+    fn iter(&self) -> Box<dyn DataLoaderIterator<Tensor<2, burn::prelude::Int>>> {
         Box::new(self.start_epoch())
     }
 
@@ -294,8 +293,8 @@ where
 
     fn to_device(
         &self,
-        device: &B::Device,
-    ) -> Arc<dyn DataLoader<B, Tensor<B, 2, burn::prelude::Int>>> {
+        device: &Device,
+    ) -> Arc<dyn DataLoader<Tensor<2, burn::prelude::Int>>> {
         Arc::new(Self {
             shard_paths: self.shard_paths.clone(),
             rng: self.rng.clone(),
@@ -309,7 +308,7 @@ where
         &self,
         start: usize,
         end: usize,
-    ) -> Arc<dyn DataLoader<B, Tensor<B, 2, burn::prelude::Int>>> {
+    ) -> Arc<dyn DataLoader<Tensor<2, burn::prelude::Int>>> {
         Arc::new(Self {
             shard_paths: self.shard_paths[start..end].to_vec(),
             rng: self.rng.clone(),
@@ -384,6 +383,7 @@ impl EpochStats {
         Progress {
             items_processed: self.file_count(),
             items_total: self.items_total(),
+            unit: None,
         }
     }
 }

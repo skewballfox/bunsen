@@ -40,7 +40,6 @@ use alloc::{
 };
 use core::marker::PhantomData;
 
-use burn::prelude::Backend;
 
 #[cfg(doc)]
 use super::ResourceMap;
@@ -257,11 +256,11 @@ impl<H: Construct> PretrainedFactory<H> {
     ///
     /// # Errors
     /// As [`resolve`](Self::resolve) and [`Deferred::load`].
-    pub fn load<B: Backend>(
+    pub fn load(
         &self,
         spec: &str,
         cache: &PretrainedCache,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Loaded<H::Built<B>>> {
         self.resolve(spec, cache)?.load::<B>(cache, device)
     }
@@ -435,7 +434,7 @@ pub(crate) mod testing {
     pub struct CheckpointPath;
 
     impl Construct for CheckpointPath {
-        type Built<B: Backend> = PathBuf;
+        type Built = PathBuf;
 
         const KIT: &'static str = "kit";
 
@@ -443,11 +442,11 @@ pub(crate) mod testing {
             Ok(Self)
         }
 
-        fn construct<B: Backend>(
+        fn construct(
             &self,
             _model: &PretrainedRef,
             loaded: &LoadedResources,
-            _device: &B::Device,
+            _device: &Device,
         ) -> BunsenResult<Arc<PathBuf>> {
             Ok(Arc::new(loaded.expect("checkpoint")?.to_path_buf()))
         }

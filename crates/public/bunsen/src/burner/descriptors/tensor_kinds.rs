@@ -1,10 +1,9 @@
 use burn::{
     Tensor,
     prelude,
-    prelude::Backend,
     tensor::{
         DType,
-        TensorKind,
+        kind::TensorKind,
     },
 };
 use strum;
@@ -47,10 +46,8 @@ impl TensorKindDesc {
     }
 
     /// Returns the kind of the given tensor.
-    pub fn kind<B, const R: usize, K>(_tensor: &Tensor<B, R, K>) -> Self
-    where
-        B: Backend,
-        K: TensorKind<B> + ParamKindBinding,
+    pub fn kind<const R: usize, K>(_tensor: &Tensor<R, K>) -> Self
+    where K: TensorKind + ParamKindBinding,
     {
         Self::for_kind::<K>()
     }

@@ -21,8 +21,7 @@ use burn::{
     prelude::TensorData,
     tensor::{
         Tolerance,
-        backend::BackendTypes,
-    },
+        },
 };
 
 use crate::{
@@ -53,7 +52,7 @@ use crate::{
 };
 
 type B = PerformanceBackend;
-type F = <B as BackendTypes>::FloatElem;
+type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
 /// Loads a flat little-endian `f32` fixture as `f64`.
 fn fixture(name: &str) -> Vec<f64> {
@@ -79,7 +78,7 @@ fn fixture(name: &str) -> Vec<f64> {
 /// Asserts a tensor matches a fixture, comparing as `TensorData` so `burn`
 /// reports the mismatch.
 fn assert_matches_fixture<const D: usize>(
-    actual: &Tensor<B, D>,
+    actual: &Tensor<D>,
     name: &str,
     tolerance: Tolerance<F>,
 ) {
@@ -90,7 +89,7 @@ fn assert_matches_fixture<const D: usize>(
 }
 
 /// The signal the log-mel fixtures were generated from.
-fn signal_tensor(device: &burn::prelude::Device<B>) -> (Tensor<B, 2>, usize) {
+fn signal_tensor(device: &burn::prelude::Device<B>) -> (Tensor<2>, usize) {
     let samples = fixture("signal_2s_16k.f32");
     let n = samples.len();
     assert_eq!(n, 32_000);
@@ -154,9 +153,9 @@ fn test_filterbank_matches_librosa() {
 #[serial_test::serial]
 fn test_batch_logmel_matches_librosa_center_false() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
+    let _memory = DeviceMemoryGuard::new(&device);
     let opts = parity_options().with_start_padding(PaddingMode::None);
-    let conv: PerceptiveAudioConverter<B> = opts.try_init(&device).ok_or_panic();
+    let conv: PerceptiveAudioConverter = opts.try_init(&device).ok_or_panic();
 
     let (x, samples) = signal_tensor(&device);
 
@@ -176,8 +175,8 @@ fn test_batch_logmel_matches_librosa_center_false() {
 #[serial_test::serial]
 fn test_streaming_logmel_matches_librosa_center_true() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
-    let conv: PerceptiveAudioConverter<B> = parity_options().try_init(&device).ok_or_panic();
+    let _memory = DeviceMemoryGuard::new(&device);
+    let conv: PerceptiveAudioConverter = parity_options().try_init(&device).ok_or_panic();
 
     let (x, _) = signal_tensor(&device);
 
@@ -188,7 +187,7 @@ fn test_streaming_logmel_matches_librosa_center_true() {
     assert_eq!(mels.dims()[1], 199);
     assert_eq!(tail.dims()[1], 2);
 
-    let joined: Tensor<B, 3> = Tensor::cat(vec![mels, tail], 1);
+    let joined: Tensor<3> = Tensor::cat(vec![mels, tail], 1);
     assert_eq!(joined.dims(), [1, 201, conv.n_mels()]);
 
     assert_matches_fixture(&joined, "logmel_center_true.f32", logmel_tolerance());
@@ -211,14 +210,14 @@ fn test_streaming_logmel_matches_librosa_center_true() {
 #[serial_test::serial]
 fn test_whisper_logmel_matches_reference() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
-    let conv: PerceptiveAudioConverter<B> = parity_options().try_init(&device).ok_or_panic();
+    let _memory = DeviceMemoryGuard::new(&device);
+    let conv: PerceptiveAudioConverter = parity_options().try_init(&device).ok_or_panic();
 
     let (x, _) = signal_tensor(&device);
 
     let (mels, ctx) = conv.new_context(1).transform(x).unwrap();
     let tail = ctx.finish().unwrap();
-    let joined: Tensor<B, 3> = Tensor::cat(vec![mels, tail], 1);
+    let joined: Tensor<3> = Tensor::cat(vec![mels, tail], 1);
     assert_eq!(joined.dims(), [1, 201, conv.n_mels()]);
 
     // Whisper's `stft[..., :-1]`.
@@ -228,8 +227,8 @@ fn test_whisper_logmel_matches_reference() {
     // reduction over all 201 frames while the maximum does not live in the
     // dropped frame — true here (it is in frame 30), but assert it so the
     // test cannot quietly start comparing the wrong thing.
-    let max_all = joined.max().into_scalar() as f64;
-    let max_cut = cut.clone().max().into_scalar() as f64;
+    let max_all = joined.max().into_scalar::<f64>();
+    let max_cut = cut.clone().max().into_scalar::<f64>();
     assert!(
         (max_all - max_cut).abs() < 1e-6,
         "the dropped frame holds the maximum ({max_all} vs {max_cut}); \
@@ -247,8 +246,8 @@ fn test_whisper_logmel_matches_reference() {
 #[serial_test::serial]
 fn test_chunked_streaming_matches_librosa_center_true() {
     let device = default_device();
-    let _memory = DeviceMemoryGuard::<B>::new(&device);
-    let conv: PerceptiveAudioConverter<B> = parity_options().try_init(&device).ok_or_panic();
+    let _memory = DeviceMemoryGuard::new(&device);
+    let conv: PerceptiveAudioConverter = parity_options().try_init(&device).ok_or_panic();
 
     let samples = fixture("signal_2s_16k.f32");
 
@@ -270,7 +269,7 @@ fn test_chunked_streaming_matches_librosa_center_true() {
 
     pieces.push(ctx.finish().unwrap());
 
-    let joined: Tensor<B, 3> = Tensor::cat(pieces, 1);
+    let joined: Tensor<3> = Tensor::cat(pieces, 1);
     assert_eq!(joined.dims(), [1, 201, conv.n_mels()]);
 
     assert_matches_fixture(&joined, "logmel_center_true.f32", logmel_tolerance());

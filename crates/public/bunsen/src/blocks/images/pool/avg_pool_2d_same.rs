@@ -8,7 +8,6 @@ use burn::{
         AvgPool2dConfig,
     },
     prelude::{
-        Backend,
         Tensor,
     },
 };
@@ -141,10 +140,10 @@ pub struct AvgPool2dSame {
 
 impl AvgPool2dSame {
     /// Forward Pass.
-    pub fn forward<B: Backend>(
+    pub fn forward(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+        input: Tensor<4>,
+    ) -> Tensor<4> {
         let x = pad_same(input, self.pool.kernel_size, self.pool.stride, [1, 1], 0.0);
         self.pool.forward(x)
     }
@@ -164,13 +163,13 @@ pub fn get_same_padding(
 }
 
 /// Dynamically pad input x with 'SAME' padding for conv with specified args.
-pub fn pad_same<B: Backend>(
-    input: Tensor<B, 4>,
+pub fn pad_same(
+    input: Tensor<4>,
     kernel_size: [usize; 2],
     stride: [usize; 2],
     dilation: [usize; 2],
     value: f32,
-) -> Tensor<B, 4> {
+) -> Tensor<4> {
     let ih = input.shape()[2];
     let iw = input.shape()[3];
     let pad_h = get_same_padding(ih, kernel_size[0], stride[0], dilation[0]);

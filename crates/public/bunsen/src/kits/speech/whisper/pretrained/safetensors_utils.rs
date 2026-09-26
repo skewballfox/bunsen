@@ -13,8 +13,7 @@
 
 use burn::{
     config::Config,
-    prelude::Backend,
-};
+    };
 use burn_store::PyTorchToBurnAdapter;
 
 use crate::{
@@ -189,13 +188,13 @@ impl SafetensorsWhisperScanner {
     /// # Errors
     /// As [`scan_cfg`](Self::scan_cfg) and
     /// [`SafetensorsCheckpoint::load_into`].
-    pub fn load<B: Backend>(
+    pub fn load(
         &self,
         checkpoint: &SafetensorsCheckpoint,
-        device: &B::Device,
-    ) -> BunsenResult<(Whisper<B>, WhisperApiConfig)> {
+        device: &Device,
+    ) -> BunsenResult<(Whisper, WhisperApiConfig)> {
         let cfg = self.scan_cfg(checkpoint)?;
-        let mut module: Whisper<B> = cfg.try_init(device)?;
+        let mut module: Whisper = cfg.try_init(device)?;
         checkpoint.load_into(&mut module, |store| {
             let mut store = store.with_from_adapter(PyTorchToBurnAdapter);
             for (from, to) in HF_TO_BUNSEN {

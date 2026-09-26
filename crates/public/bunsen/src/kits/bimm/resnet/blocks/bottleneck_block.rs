@@ -21,7 +21,6 @@ use burn::{
         norm::NormalizationConfig,
     },
     prelude::{
-        Backend,
         Config,
         Module,
         Tensor,
@@ -269,11 +268,11 @@ impl BottleneckBlockConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, BottleneckBlock<B>> for BottleneckBlockConfig {
+impl ModuleInit<BottleneckBlock> for BottleneckBlockConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<BottleneckBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<BottleneckBlock> {
         let drop_path_prob = expect_probability(self.drop_path_prob);
 
         let in_planes = self.in_planes();
@@ -375,7 +374,7 @@ impl<B: Backend> ModuleInit<B, BottleneckBlock<B>> for BottleneckBlockConfig {
 ///
 /// Built by [`BottleneckBlockConfig`].
 #[derive(Module, Debug)]
-pub struct BottleneckBlock<B: Backend> {
+pub struct BottleneckBlock {
     /// Base width.
     pub base_width: usize,
 
@@ -386,14 +385,14 @@ pub struct BottleneckBlock<B: Backend> {
     pub reduce_first: usize,
 
     /// Optional downsample (conv + norm) for the residual connection.
-    pub downsample: Option<ConvBlock2d<B>>,
+    pub downsample: Option<ConvBlock2d>,
 
     /// First conv/norm/act layer.
-    pub cb1: ConvBlock2d<B>,
+    pub cb1: ConvBlock2d,
     /// Second conv/norm/act layer.
-    pub cb2: ConvBlock2d<B>,
+    pub cb2: ConvBlock2d,
     /// Third conv/norm/act layer.
-    pub cb3: ConvBlock2d<B>,
+    pub cb3: ConvBlock2d,
 
     /// Optional `DropBlock` layer.
     pub drop_block: Option<DropBlock2d>,
@@ -402,7 +401,7 @@ pub struct BottleneckBlock<B: Backend> {
     pub drop_path: Option<DropPath>,
 }
 
-impl<B: Backend> BottleneckBlockMeta for BottleneckBlock<B> {
+impl BottleneckBlockMeta for BottleneckBlock {
     fn in_planes(&self) -> usize {
         self.cb1.in_channels()
     }
@@ -440,7 +439,7 @@ impl<B: Backend> BottleneckBlockMeta for BottleneckBlock<B> {
     }
 }
 
-impl<B: Backend> BottleneckBlock<B> {
+impl BottleneckBlock {
     /// Debug Print.
     pub fn debug_print(&self) {
         eprintln!("#### BottleneckBlock");
@@ -477,8 +476,8 @@ impl<B: Backend> BottleneckBlock<B> {
     /// tensor;
     pub fn forward(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+        input: Tensor<4>,
+    ) -> Tensor<4> {
         #[cfg(debug_assertions)]
         use crate::contracts::*;
         #[cfg(debug_assertions)]
@@ -643,12 +642,12 @@ mod tests {
     fn test_basic_block_meta() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let in_planes = 2;
         let out_planes = 2;
 
-        let block: BottleneckBlock<B> =
+        let block: BottleneckBlock =
             BottleneckBlockConfig::new(in_planes, out_planes).init(&device);
 
         assert_eq!(block.in_planes(), in_planes);
@@ -660,9 +659,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_basic_block_forward_same_channels_no_downsample_autodiff() {
-        type B = Autodiff<PerformanceBackend>;
+        type B = /* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<PerformanceBackend>;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch_size = 2;
         let in_planes = 2;
@@ -670,7 +669,7 @@ mod tests {
         let in_height = 8;
         let in_width = 8;
 
-        let block: BottleneckBlock<B> = BottleneckBlockConfig::new(in_planes, planes).init(&device);
+        let block: BottleneckBlock = BottleneckBlockConfig::new(in_planes, planes).init(&device);
         let out_planes = block.out_planes();
 
         let input = Tensor::ones([batch_size, in_planes, in_height, in_width], &device);
@@ -691,9 +690,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_basic_block_forward_downsample_drop_block_drop_path_autodiff() {
-        type B = Autodiff<PerformanceBackend>;
+        type B = /* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<PerformanceBackend>;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch_size = 2;
         let in_planes = 2;
@@ -701,7 +700,7 @@ mod tests {
         let in_height = 8;
         let in_width = 8;
 
-        let block: BottleneckBlock<B> = BottleneckBlockConfig::new(in_planes, planes)
+        let block: BottleneckBlock = BottleneckBlockConfig::new(in_planes, planes)
             .with_drop_path_prob(0.1)
             .with_drop_block(Some(DropBlockOptions::default()))
             .with_stride(2)

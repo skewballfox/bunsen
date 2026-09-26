@@ -204,7 +204,7 @@ mod tests {
         type B = PerformanceBackend;
 
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let env = Arc::new(init_default_operator_environment());
 

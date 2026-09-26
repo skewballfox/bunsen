@@ -2,8 +2,7 @@
 
 use burn::{
     Tensor,
-    prelude::Backend,
-    tensor::BasicOps,
+    tensor::kind::Basic,
 };
 
 /// Convolves a neighborhood function over a 2D tensor.
@@ -22,20 +21,18 @@ use burn::{
 /// # Returns
 ///
 /// A tensor in `[batch, c_out, h_wins, w_wins]`
-pub fn convolve_func_2d<B, KIn, KOut, F>(
-    input: Tensor<B, 4, KIn>,
+pub fn convolve_func_2d<KIn, KOut, F>(
+    input: Tensor<4, KIn>,
     func: F,
     kernel: [usize; 2],
     stride: [usize; 2],
-) -> Tensor<B, 4, KOut>
-where
-    B: Backend,
-    KIn: BasicOps<B>,
-    KOut: BasicOps<B>,
-    F: Fn(Tensor<B, 6, KIn>) -> Tensor<B, 4, KOut>,
+) -> Tensor<4, KOut>
+where KIn: Basic,
+    KOut: Basic,
+    F: Fn(Tensor<6, KIn>) -> Tensor<4, KOut>,
 {
     #[cfg(debug_assertions)]
-    use burn::tensor::ops::unfold::calculate_unfold_windows;
+    use burn::backend::ops::unfold::calculate_unfold_windows;
 
     #[cfg(debug_assertions)]
     use crate::contracts::{
@@ -51,7 +48,7 @@ where
     #[cfg(debug_assertions)]
     let w_wins = calculate_unfold_windows(width, kernel[1], stride[1]);
 
-    let x: Tensor<B, 6, KIn> = input
+    let x: Tensor<6, KIn> = input
         .unfold::<5, usize>(2, kernel[0], stride[0])
         .unfold::<6, usize>(3, kernel[1], stride[1]);
 
@@ -69,7 +66,7 @@ where
         ]
     );
 
-    let x: Tensor<B, 6, KIn> = x.permute([0, 2, 3, 1, 4, 5]);
+    let x: Tensor<6, KIn> = x.permute([0, 2, 3, 1, 4, 5]);
 
     #[cfg(debug_assertions)]
     assert_shape_contract_periodically!(

@@ -1,4 +1,4 @@
-use burn::prelude::Backend;
+
 
 /// Releases `device`'s cached memory pages.
 ///
@@ -30,8 +30,8 @@ use burn::prelude::Backend;
 /// after.
 ///
 /// [`CpuBackend`]: crate::support::testing::CpuBackend
-pub fn release_cached_device_memory<B: Backend>(device: &B::Device) {
-    B::memory_cleanup(device);
+pub fn release_cached_device_memory(device: &Device) {
+    device.memory_cleanup();
 }
 
 /// Releases a device's cached memory pages when it drops.
@@ -71,21 +71,21 @@ pub fn release_cached_device_memory<B: Backend>(device: &B::Device) {
 /// time; it does nothing about what it holds *at once*, and tests running
 /// concurrently each hold their own working set. A dozen of those is enough to
 /// exhaust a 24 GiB card even though no single one comes close.
-pub struct DeviceMemoryGuard<B: Backend> {
+pub struct DeviceMemoryGuard {
     /// The device whose pool is released on drop.
-    device: B::Device,
+    device: Device,
 }
 
-impl<B: Backend> DeviceMemoryGuard<B> {
+impl DeviceMemoryGuard {
     /// Guards `device`'s memory pool, releasing it when the guard drops.
-    pub fn new(device: &B::Device) -> Self {
+    pub fn new(device: &Device) -> Self {
         Self {
             device: device.clone(),
         }
     }
 }
 
-impl<B: Backend> Drop for DeviceMemoryGuard<B> {
+impl Drop for DeviceMemoryGuard {
     fn drop(&mut self) {
         release_cached_device_memory::<B>(&self.device);
     }

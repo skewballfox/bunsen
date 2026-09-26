@@ -149,7 +149,7 @@ pub trait TensorDataViewExt {
 /// TODO: expose [`TensorData::matches_target_dtype`] upstream.
 fn matches_target_dtype<E: Element>(data: &TensorData) -> bool {
     let target_dtype = E::dtype();
-    match data.dtype {
+    match data.dtype() {
         DType::Bool(BoolStore::U8) => {
             matches!(target_dtype, DType::U8 | DType::Bool(BoolStore::U8))
         }
@@ -249,7 +249,7 @@ impl<'a, E: Element> TensorDataView<'a, E> {
         &self,
         dims: &[I],
     ) -> usize {
-        ravel_dims(&self.data.shape, dims)
+        ravel_dims(self.data.shape(), dims)
     }
 }
 
@@ -360,7 +360,7 @@ impl<'a, E: Element> TensorDataViewMut<'a, E> {
         &self,
         dims: &[I],
     ) -> usize {
-        ravel_dims(&self.data.shape, dims)
+        ravel_dims(self.data.shape(), dims)
     }
 }
 
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn test_tensor_data_index_mut_view() {
         let mut data = TensorData::from([[1.0, 2.0], [3.0, 4.0]]);
-        let shape = data.shape.clone();
+        let shape = data.shape().clone();
 
         let mut view = data.expect_index_mut_view::<f64>();
 

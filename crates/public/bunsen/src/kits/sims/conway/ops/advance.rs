@@ -3,7 +3,6 @@
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         Bool,
         Int,
         s,
@@ -32,13 +31,11 @@ static INNER_SLICE: Slice = Slice {
     step: 1,
 };
 
-fn update_and_wrap<B, const R: usize, F>(
-    state: Tensor<B, R, Bool>,
+fn update_and_wrap<const R: usize, F>(
+    state: Tensor<R, Bool>,
     f: F,
-) -> Tensor<B, R, Bool>
-where
-    B: Backend,
-    F: Fn(Tensor<B, R, Bool>) -> Tensor<B, R, Bool>,
+) -> Tensor<R, Bool>
+where F: Fn(Tensor<R, Bool>) -> Tensor<R, Bool>,
 {
     let inner_update = f(state.clone());
 
@@ -55,7 +52,7 @@ where
 ///
 /// # Returns
 /// - the `[H, W]` evolved interior state, with wrapped edges.
-pub fn next_state_wrapped_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+pub fn next_state_wrapped_2d(state: Tensor<2, Bool>) -> Tensor<2, Bool> {
     update_and_wrap(state, next_interior_2d)
 }
 
@@ -66,7 +63,7 @@ pub fn next_state_wrapped_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B,
 ///
 /// # Returns
 /// - the `[H-2, W-2]` evolved interior state.
-pub fn next_interior_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, Bool> {
+pub fn next_interior_2d(state: Tensor<2, Bool>) -> Tensor<2, Bool> {
     #[cfg(any(test, debug_assertions))]
     let [h, w] = crate::contracts::unpack_shape_contract!(["h", "w"], &state.dims());
 
@@ -105,10 +102,10 @@ pub fn next_interior_2d<B: Backend>(state: Tensor<B, 2, Bool>) -> Tensor<B, 2, B
 ///
 /// # Returns
 /// - the `[H, W, Z]` evolved interior state, with wrapped edges.
-pub fn next_state_wrapped_3d<B: Backend>(
-    state: Tensor<B, 3, Bool>,
+pub fn next_state_wrapped_3d(
+    state: Tensor<3, Bool>,
     rules: &ConwayRules,
-) -> Tensor<B, 3, Bool> {
+) -> Tensor<3, Bool> {
     update_and_wrap(state, |state| next_interior_3d(state, rules))
 }
 
@@ -121,10 +118,10 @@ pub fn next_state_wrapped_3d<B: Backend>(
 ///
 /// # Returns
 /// - the `[H-2, W-2, Z-2]` evolved interior state.
-pub fn next_interior_3d<B: Backend>(
-    state: Tensor<B, 3, Bool>,
+pub fn next_interior_3d(
+    state: Tensor<3, Bool>,
     rules: &ConwayRules,
-) -> Tensor<B, 3, Bool> {
+) -> Tensor<3, Bool> {
     #[cfg(debug_assertions)]
     let [h, w, z] = crate::contracts::unpack_shape_contract!(["h", "w", "z"], &state.dims());
 
@@ -132,7 +129,7 @@ pub fn next_interior_3d<B: Backend>(
     let is_live = state.clone().slice(s![1..-1, 1..-1, 1..-1]);
 
     // [H-2, W-2, Z-2]
-    let win_counts: Tensor<B, 3, Int> = state
+    let win_counts: Tensor<3, Int> = state
         .clone()
         .unfold::<4, _>(0, 3, 1)
         .unfold::<5, _>(1, 3, 1)

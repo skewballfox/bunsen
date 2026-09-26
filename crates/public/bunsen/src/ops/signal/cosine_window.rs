@@ -1,7 +1,6 @@
 use burn::{
     Tensor,
     config::Config,
-    prelude::Backend,
     tensor::TensorCreationOptions,
 };
 
@@ -84,11 +83,11 @@ impl SamplingWindowBuilder for CosineWindowConfig {
             .collect()
     }
 
-    fn to_tensor_window<B: Backend>(
+    fn to_tensor_window(
         &self,
         size: usize,
         options: impl Into<TensorCreationOptions<B>>,
-    ) -> Tensor<B, 1> {
+    ) -> Tensor<1> {
         match size {
             0 | 1 => return Tensor::ones([size], options),
             _ => (),
@@ -191,11 +190,11 @@ impl SamplingWindowBuilder for DualCosineWindow {
             .collect()
     }
 
-    fn to_tensor_window<B: Backend>(
+    fn to_tensor_window(
         &self,
         size: usize,
         options: impl Into<TensorCreationOptions<B>>,
-    ) -> Tensor<B, 1> {
+    ) -> Tensor<1> {
         match size {
             0 | 1 => return Tensor::ones([size], options),
             _ => (),
@@ -221,7 +220,6 @@ mod tests {
         prelude::TensorData,
         tensor::{
             Tolerance,
-            backend::BackendTypes,
             signal::{
                 blackman_window,
                 hann_window,
@@ -245,9 +243,9 @@ mod tests {
     };
 
     type B = CpuBackend;
-    type F = <B as BackendTypes>::FloatElem;
+    type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
-    fn check_hann_impl<B: Backend>(
+    fn check_hann_impl(
         periodic: bool,
         expected: &[f64],
         options: impl Into<TensorCreationOptions<B>>,
@@ -307,7 +305,7 @@ mod tests {
         );
     }
 
-    fn check_blackman_impl<B: Backend>(
+    fn check_blackman_impl(
         periodic: bool,
         expected: &[f64],
         options: impl Into<TensorCreationOptions<B>>,

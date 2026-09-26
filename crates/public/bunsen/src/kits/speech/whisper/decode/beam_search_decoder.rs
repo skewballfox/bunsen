@@ -18,7 +18,6 @@ use std::collections::HashMap;
 
 use burn::{
     Tensor,
-    prelude::Backend,
     tensor::activation::log_softmax,
 };
 
@@ -119,7 +118,7 @@ impl WhisperBeamSearchDecoder {
     }
 }
 
-impl<B: Backend> TokenDecoder<B> for WhisperBeamSearchDecoder {
+impl TokenDecoder<B> for WhisperBeamSearchDecoder {
     fn group_size(&self) -> usize {
         self.k
     }
@@ -131,7 +130,7 @@ impl<B: Backend> TokenDecoder<B> for WhisperBeamSearchDecoder {
     fn update(
         &mut self,
         tokens: &mut Vec<Vec<i64>>,
-        logits: Tensor<B, 2>,
+        logits: Tensor<2>,
         sum_logprobs: &mut [f32],
         reorder: &mut dyn FnMut(&[usize]),
     ) -> (Vec<i64>, bool) {
@@ -149,8 +148,8 @@ impl<B: Backend> TokenDecoder<B> for WhisperBeamSearchDecoder {
 
         // Each row's k + 1 best next tokens, with their log probabilities.
         let (values, indices) = log_softmax(logits, 1).topk_with_indices(k + 1, 1);
-        let values: Vec<f32> = values.into_data().convert::<f32>().to_vec().unwrap();
-        let indices: Vec<i64> = indices.into_data().convert::<i64>().to_vec().unwrap();
+        let values: Vec<f32> = values.into_data().convert::<f32>().try_to_vec().unwrap();
+        let indices: Vec<i64> = indices.into_data().convert::<i64>().try_to_vec().unwrap();
 
         let mut next: Vec<Vec<i64>> = Vec::with_capacity(rows);
         let mut next_sums: Vec<f32> = Vec::with_capacity(rows);
@@ -284,10 +283,10 @@ mod tests {
         default_device,
     };
 
-    fn logits<B: Backend>(
+    fn logits(
         rows: &[&[f32]],
-        device: &B::Device,
-    ) -> Tensor<B, 2> {
+        device: &Device,
+    ) -> Tensor<2> {
         let vocab = rows[0].len();
         let flat: Vec<f32> = rows.iter().flat_map(|r| r.iter().copied()).collect();
         Tensor::from_data(TensorData::new(flat, [rows.len(), vocab]), device)
@@ -304,7 +303,7 @@ mod tests {
     fn test_first_step_deduplicates() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let mut decoder = WhisperBeamSearchDecoder::new(3, EOT, None);
         let mut tokens = vec![vec![7]; 3];
@@ -337,7 +336,7 @@ mod tests {
     fn test_finished_set_and_patience() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let mut decoder = WhisperBeamSearchDecoder::new(2, EOT, None);
         assert_eq!(decoder.beam_size(), 2);
         assert_eq!(decoder.max_candidates(), 2);
@@ -385,7 +384,7 @@ mod tests {
     fn test_patience_and_finalize_fill() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let mut decoder = WhisperBeamSearchDecoder::new(2, EOT, Some(2.0));
         assert_eq!(decoder.max_candidates(), 4);
         let mut tokens = vec![vec![7]; 2];
@@ -421,7 +420,7 @@ mod tests {
     fn test_groups_are_independent() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let mut decoder = WhisperBeamSearchDecoder::new(2, EOT, None);
         let mut tokens = vec![vec![7]; 4];
         let mut sums = vec![0.0; 4];

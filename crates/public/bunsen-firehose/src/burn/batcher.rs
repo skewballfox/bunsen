@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use burn::{
     data::dataloader::batcher::Batcher,
-    prelude::Backend,
-};
+    prelude::Device,
+    };
 
 use crate::core::{
     FirehoseRowBatch,
@@ -24,24 +24,20 @@ where
 }
 
 /// Output Adapter for `HackyBatcher`.
-pub trait BatcherOutputAdapter<B, O>: Send + Sync
-where
-    B: Backend,
-    O: Send + Clone + std::fmt::Debug + 'static,
+pub trait BatcherOutputAdapter<O>: Send + Sync
+where O: Send + Clone + std::fmt::Debug + 'static,
 {
     /// Converts a `FirehoseRowBatch` to an output of type `O`.
     fn apply(
         &self,
         batch: &FirehoseRowBatch,
-        device: &B::Device,
+        device: &Device,
     ) -> anyhow::Result<O>;
 }
 
 /// Firehose Row Burn Batcher.
-pub struct FirehoseExecutorBatcher<B, I, O>
-where
-    B: Backend,
-    I: Send + Sync + Clone + std::fmt::Debug + 'static,
+pub struct FirehoseExecutorBatcher<I, O>
+where I: Send + Sync + Clone + std::fmt::Debug + 'static,
     O: Send + Clone + std::fmt::Debug + 'static,
 {
     /// The executor used to run the batch.
@@ -51,13 +47,11 @@ where
     input_adapter: Arc<dyn BatcherInputAdapter<I>>,
 
     /// Map a `FirehoseRowBatch` to an output of type `O`.
-    output_adapter: Arc<dyn BatcherOutputAdapter<B, O>>,
+    output_adapter: Arc<dyn BatcherOutputAdapter<O>>,
 }
 
-impl<B, I, O> FirehoseExecutorBatcher<B, I, O>
-where
-    B: Backend,
-    I: Send + Sync + Clone + std::fmt::Debug + 'static,
+impl<I, O> FirehoseExecutorBatcher<I, O>
+where I: Send + Sync + Clone + std::fmt::Debug + 'static,
     O: Send + Clone + std::fmt::Debug + 'static,
 {
     /// Creates a new `HackyBatcher` with the given executor, input adapter, and
@@ -65,7 +59,7 @@ where
     pub fn new(
         executor: Arc<dyn FirehoseBatchExecutor>,
         input_adapter: Arc<dyn BatcherInputAdapter<I>>,
-        output_adapter: Arc<dyn BatcherOutputAdapter<B, O>>,
+        output_adapter: Arc<dyn BatcherOutputAdapter<O>>,
     ) -> Self {
         Self {
             executor,
@@ -87,7 +81,7 @@ where
     fn batch_result(
         &self,
         items: Vec<I>,
-        device: &B::Device,
+        device: &Device,
     ) -> anyhow::Result<O> {
         let mut batch = self.input_adapter.apply(items)?;
 
@@ -99,16 +93,14 @@ where
     }
 }
 
-impl<B, I, O> Batcher<B, I, O> for FirehoseExecutorBatcher<B, I, O>
-where
-    B: Backend,
-    I: Send + Sync + Clone + std::fmt::Debug + 'static,
+impl<I, O> Batcher<I, O> for FirehoseExecutorBatcher<I, O>
+where I: Send + Sync + Clone + std::fmt::Debug + 'static,
     O: Send + Clone + std::fmt::Debug + 'static,
 {
     fn batch(
         &self,
         items: Vec<I>,
-        device: &B::Device,
+        device: &Device,
     ) -> O {
         self.batch_result(items, device)
             .expect("Failed to execute batch")

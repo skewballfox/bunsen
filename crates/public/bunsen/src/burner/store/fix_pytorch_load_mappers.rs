@@ -5,8 +5,7 @@ use burn::{
         Linear,
         attention::MultiHeadAttention,
     },
-    prelude::Backend,
-};
+    };
 
 use crate::burner::store::repair_pytorch_strided_weight;
 
@@ -41,7 +40,7 @@ impl<T: FixPytorchLoadMappers> FixPytorchLoadMappers for Vec<T> {
     }
 }
 
-impl<B: Backend> FixPytorchLoadMappers for Linear<B> {
+impl FixPytorchLoadMappers for Linear {
     /// The projection weight is the affected parameter; a bias is rank-1, and
     /// a rank-1 view cannot be strided this way.
     fn fix_pytorch_load_mappers(mut self) -> Self {
@@ -50,7 +49,7 @@ impl<B: Backend> FixPytorchLoadMappers for Linear<B> {
     }
 }
 
-impl<B: Backend> FixPytorchLoadMappers for MultiHeadAttention<B> {
+impl FixPytorchLoadMappers for MultiHeadAttention {
     /// All four projections are `Linear`, and `PyTorch` stores each of them
     /// transposed.
     fn fix_pytorch_load_mappers(mut self) -> Self {
@@ -88,7 +87,7 @@ mod tests {
     type B = CpuBackend;
 
     /// A `[2, 3]` probe the repair visibly reorders.
-    fn probe(device: &Device<B>) -> Tensor<B, 2> {
+    fn probe(device: &Device<B>) -> Tensor<2> {
         Tensor::from_data(
             TensorData::new((0..6).map(|v| v as f64).collect::<Vec<_>>(), [2, 3]),
             device,
@@ -97,14 +96,12 @@ mod tests {
 
     /// Runs `param`'s load mapping over [`probe`], as a flat `f32` row.
     fn load_mapped_probe(
-        param: &Param<Tensor<B, 2>>,
+        param: &Param<Tensor<2>>,
         device: &Device<B>,
     ) -> Vec<f32> {
         param_load_mapping(param, probe(device))
             .cast(DType::F32)
-            .to_data()
-            .to_vec()
-            .unwrap()
+            .to_data().try_to_vec().unwrap()
     }
 
     /// The probe as it arrives, when nothing is attached.
@@ -153,7 +150,7 @@ mod tests {
     fn test_vec_repairs_each_element() {
         let device: Device<B> = Default::default();
 
-        let linears: Vec<Linear<B>> = (0..3)
+        let linears: Vec<Linear> = (0..3)
             .map(|_| LinearConfig::new(3, 5).init::<B>(&device))
             .collect();
 

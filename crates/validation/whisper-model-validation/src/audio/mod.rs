@@ -57,7 +57,6 @@ use burn::{
     Tensor,
     module::Module,
     prelude::{
-        Backend,
         Device,
         TensorData,
     },
@@ -306,10 +305,10 @@ mod gpu_tests;
 /// Whisper pads short audio, and then converted in a single call — the
 /// streaming context is a homomorphism over chunking, so one call and many
 /// give the same spectrogram.
-pub fn clip_mels<B: Backend>(
+pub fn clip_mels(
     name: &str,
     device: &Device<B>,
-) -> Tensor<B, 3> {
+) -> Tensor<3> {
     let wav = samples(name);
 
     let windows = wav.len().div_ceil(N_SAMPLES).max(1);
@@ -318,7 +317,7 @@ pub fn clip_mels<B: Backend>(
     let n = values.len();
 
     let front_end = WhisperFrontEndConfig::new().with_sample_rate(SAMPLE_RATE);
-    let converter: PerceptiveAudioConverter<B> = front_end
+    let converter: PerceptiveAudioConverter = front_end
         .mel_converter_options(N_MELS)
         .expect("a Whisper rate")
         .try_init(device)
@@ -341,7 +340,7 @@ pub fn clip_mels<B: Backend>(
 /// OpenAI ships fp16; the mel front end produces the backend's default
 /// float. Feeding f32 input to an f16 model does not error, it just
 /// returns wrong numbers, so the cast is load-bearing.
-pub fn bunsen_model<B: Backend>(device: &Device<B>) -> Whisper<B> {
+pub fn bunsen_model(device: &Device<B>) -> Whisper {
     let bundle = crate::load_base::<B>(device);
     let model = &bundle.model;
 

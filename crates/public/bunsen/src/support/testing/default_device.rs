@@ -1,5 +1,5 @@
+/* TODO(burn 0.22 migration): burn::tensor::backend was removed, and burn::tensor::Device does not implement DeviceOps. Use &Device. See BREAKING_CHANGES.md #27, #35. */
 use burn::{
-    prelude::Backend,
     tensor::backend::DeviceOps,
 };
 
@@ -17,7 +17,6 @@ mod value_cache {
         sync::LazyLock,
     };
 
-    use burn::prelude::Backend;
     use dashmap::DashMap;
 
     /// Type-erased cache values, keyed by the [`TypeId`] of the value's own
@@ -192,8 +191,8 @@ pub fn default_device<D: DeviceOps>() -> D {
 /// # use bunsen::support::testing::{CpuBackend, backend_device};
 /// let device = backend_device::<CpuBackend>();
 /// ```
-pub fn backend_device<B: Backend>() -> B::Device {
-    default_device::<B::Device>()
+pub fn backend_device() -> Device {
+    default_device::<Device>()
 }
 
 /// Pin the device that [`default_device`] returns for device type `D`.

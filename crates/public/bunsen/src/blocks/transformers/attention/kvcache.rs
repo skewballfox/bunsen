@@ -5,7 +5,6 @@ use burn::{
     config::Config,
     module::Module,
     prelude::{
-        Backend,
         s,
     },
     tensor::DType,
@@ -87,7 +86,7 @@ impl KVCacheMeta for KVCacheConfig {
 
 impl KVCacheConfig {
     /// Initializes a [`KVCache`].
-    pub fn init<B: Backend>(self) -> KVCache<B> {
+    pub fn init(self) -> KVCache {
         KVCache {
             batch_size: self.batch_size,
             num_heads: self.num_heads,
@@ -117,7 +116,7 @@ impl KVCacheConfig {
 ///
 /// Built by [`KVCacheConfig`].
 #[derive(Module, Debug)]
-pub struct KVCache<B: Backend> {
+pub struct KVCache {
     batch_size: usize,
     num_heads: usize,
     seq_len: usize,
@@ -128,10 +127,10 @@ pub struct KVCache<B: Backend> {
     extra_chunks: usize,
 
     pos: usize,
-    cache: Option<Tensor<B, 6>>,
+    cache: Option<Tensor<6>>,
 }
 
-impl<B: Backend> KVCacheMeta for KVCache<B> {
+impl KVCacheMeta for KVCache {
     fn batch_size(&self) -> usize {
         self.batch_size
     }
@@ -153,7 +152,7 @@ impl<B: Backend> KVCacheMeta for KVCache<B> {
     }
 }
 
-impl<B: Backend> KVCache<B> {
+impl KVCache {
     /// Resets the current position.
     ///
     /// Does not drop/re-allocate the cache.
@@ -174,7 +173,7 @@ impl<B: Backend> KVCache<B> {
     /// - The `batch_size` must match, or `other.batch_size` must be 1.
     pub fn prefill(
         &mut self,
-        other: &KVCache<B>,
+        other: &KVCache,
     ) {
         assert!(self.cache.is_none(), "Cannot prefill a non-empty KV cache.");
         assert!(
@@ -221,9 +220,9 @@ impl<B: Backend> KVCache<B> {
     pub fn insert_kv(
         &mut self,
         layer_idx: usize,
-        k: Tensor<B, 4>,
-        v: Tensor<B, 4>,
-    ) -> (Tensor<B, 4>, Tensor<B, 4>) {
+        k: Tensor<4>,
+        v: Tensor<4>,
+    ) -> (Tensor<4>, Tensor<4>) {
         let [t_add] = unpack_shape_contract!(
             ["B", "H_kv", "T_add", "D"],
             &k.dims(),
@@ -300,9 +299,9 @@ impl<B: Backend> KVCache<B> {
         &self,
         seq_len: usize,
         dtype: DType,
-        device: &B::Device,
-    ) -> Tensor<B, 6> {
-        Tensor::<B, 6>::empty(
+        device: &Device,
+    ) -> Tensor<6> {
+        Tensor::<6>::empty(
             [
                 self.num_layers,
                 2,

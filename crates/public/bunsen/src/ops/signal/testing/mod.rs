@@ -2,7 +2,6 @@
 
 use burn::{
     prelude::{
-        Backend,
         TensorData,
     },
     tensor::{
@@ -31,7 +30,7 @@ use crate::{
 /// # Panics
 ///
 /// Panics if either materialization differs from `expected`.
-pub fn assert_sampling_window_builder_implementation<B: Backend>(
+pub fn assert_sampling_window_builder_implementation(
     builder: &impl SamplingWindowBuilder,
     expected: &[f64],
     options: impl Into<TensorCreationOptions<B>>,

@@ -141,7 +141,7 @@ impl SlidingStftConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, SlidingStft<B>> for SlidingStftConfig {
+impl ModuleInit<SlidingStft> for SlidingStftConfig {
     /// Initializes a [`SlidingStft`] on `device`.
     ///
     /// # Errors
@@ -149,8 +149,8 @@ impl<B: Backend> ModuleInit<B, SlidingStft<B>> for SlidingStftConfig {
     /// See [`validate`](SlidingStftConfig::validate).
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<SlidingStft<B>> {
+        device: &Device,
+    ) -> BunsenResult<SlidingStft> {
         self.validate()?;
 
         let win_len = self.win_len;
@@ -202,7 +202,7 @@ impl<B: Backend> ModuleInit<B, SlidingStft<B>> for SlidingStftConfig {
 ///   (dtype casting, quantization) will silently leave the window at its
 ///   original dtype, and it does not appear in the reflection module tree.
 #[derive(Module, Debug)]
-pub struct SlidingStft<B: Backend> {
+pub struct SlidingStft {
     hop_size: usize,
     win_len: usize,
 
@@ -212,10 +212,10 @@ pub struct SlidingStft<B: Backend> {
     /// This is the frame layout (window at the frame start,
     /// zero-padding at the end), and the full-frame window layout consumed
     /// by [`stft`].
-    pub window: Tensor<B, 1>,
+    pub window: Tensor<1>,
 }
 
-impl<B: Backend> SlidingStftMeta for SlidingStft<B> {
+impl SlidingStftMeta for SlidingStft {
     fn win_len(&self) -> usize {
         self.win_len
     }
@@ -229,7 +229,7 @@ impl<B: Backend> SlidingStftMeta for SlidingStft<B> {
     }
 }
 
-impl<B: Backend> SlidingStft<B> {
+impl SlidingStft {
     /// Builds a [`SlidingStftContext`] streaming state over these coefficients.
     ///
     /// The queue is zeroed, on the same device as the coefficients.
@@ -239,7 +239,7 @@ impl<B: Backend> SlidingStft<B> {
     pub fn init_state(
         &self,
         batch_size: usize,
-    ) -> SlidingStftContext<B> {
+    ) -> SlidingStftContext {
         assert_ne!(batch_size, 0, "SlidingStft batch_size must be non-zero");
         let queue = self.zero_window(batch_size);
         SlidingStftContext {
@@ -263,7 +263,7 @@ impl<B: Backend> SlidingStft<B> {
     pub fn zero_window(
         &self,
         batch_size: usize,
-    ) -> Tensor<B, 2> {
+    ) -> Tensor<2> {
         Tensor::zeros([batch_size, self.win_len()], &self.window.device())
     }
 
@@ -284,8 +284,8 @@ impl<B: Backend> SlidingStft<B> {
     /// `(re, im)`.
     pub fn analyze(
         &self,
-        signal: Tensor<B, 2>,
-    ) -> Tensor<B, 4> {
+        signal: Tensor<2>,
+    ) -> Tensor<4> {
         #[cfg(any(test, debug_assertions))]
         let [batch, samples] = crate::contracts::unpack_shape_contract!(
             ["batch", "samples"],
@@ -367,18 +367,18 @@ impl<B: Backend> SlidingStft<B> {
 /// *Module semantics*. The queue moves with `to_device`, and is neither
 /// recorded nor visited.
 #[derive(Module, Debug)]
-pub struct SlidingStftContext<B: Backend> {
+pub struct SlidingStftContext {
     /// The fixed analysis coefficients.
-    pub coef: SlidingStft<B>,
+    pub coef: SlidingStft,
 
     /// The sliding sample queue: `[batch, win_len]`.
     ///
     /// Each row holds the `win_len` most recent samples of that stream
     /// (zeros before the stream starts).
-    pub queue: Tensor<B, 2>,
+    pub queue: Tensor<2>,
 }
 
-impl<B: Backend> SlidingStftMeta for SlidingStftContext<B> {
+impl SlidingStftMeta for SlidingStftContext {
     fn win_len(&self) -> usize {
         self.coef.win_len()
     }
@@ -392,7 +392,7 @@ impl<B: Backend> SlidingStftMeta for SlidingStftContext<B> {
     }
 }
 
-impl<B: Backend> SlidingStftContext<B> {
+impl SlidingStftContext {
     /// The batch size; each batch row is an independent stream.
     pub fn batch_size(&self) -> usize {
         self.queue.dims()[0]
@@ -412,8 +412,8 @@ impl<B: Backend> SlidingStftContext<B> {
     /// `[batch, n_bins, 2]` spectrum; the trailing axis is `(re, im)`.
     pub fn forward(
         &mut self,
-        hop: Tensor<B, 2>,
-    ) -> Tensor<B, 3> {
+        hop: Tensor<2>,
+    ) -> Tensor<3> {
         #[cfg(any(test, debug_assertions))]
         crate::contracts::assert_shape_contract!(
             ["batch", "hop_size"],
@@ -452,8 +452,8 @@ impl<B: Backend> SlidingStftContext<B> {
     /// `(re, im)`.
     pub fn forward_sequence(
         &mut self,
-        hops: Tensor<B, 3>,
-    ) -> Tensor<B, 4> {
+        hops: Tensor<3>,
+    ) -> Tensor<4> {
         #[cfg(any(test, debug_assertions))]
         let [steps] = crate::contracts::unpack_shape_contract!(
             ["steps", "batch", "hop_size"],
@@ -504,8 +504,7 @@ mod tests {
     use burn::tensor::{
         Distribution,
         Tolerance,
-        backend::BackendTypes,
-    };
+        };
 
     use super::*;
     use crate::{
@@ -519,7 +518,7 @@ mod tests {
     };
 
     type B = CpuBackend;
-    type F = <B as BackendTypes>::FloatElem;
+    type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
     #[test]
     fn test_config_meta() {
@@ -569,7 +568,7 @@ mod tests {
             .with_hop_size(16)
             .with_fft_size(64);
 
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
 
         assert_eq!(coef.win_len(), cfg.win_len());
         assert_eq!(coef.hop_size(), cfg.hop_size());
@@ -579,7 +578,7 @@ mod tests {
         // The stored window is right-padded from win_len to fft_size, with
         // the coefficients at the frame start and zeros in the tail.
         assert_eq!(coef.window.dims(), [64]);
-        let window: Vec<f64> = coef.window.to_data_as::<f64>().to_vec().unwrap();
+        let window: Vec<f64> = coef.window.to_data_as::<f64>().try_to_vec().unwrap();
         let host = cfg.window.to_vec_window(48);
         for (n, (&w, &h)) in window.iter().zip(&host).enumerate() {
             assert!((w - h).abs() <= 1e-6, "window[{n}]: {w} vs {h}");
@@ -598,7 +597,7 @@ mod tests {
         assert_eq!(stft.queue.dims(), [3, 48]);
         stft.queue
             .to_data()
-            .assert_eq(&Tensor::<B, 2>::zeros([3, 48], &device).to_data(), true);
+            .assert_eq(&Tensor::<2>::zeros([3, 48], &device).to_data(), true);
     }
 
     /// The `Module` derive is what carries the tensors across devices; assert
@@ -616,7 +615,7 @@ mod tests {
             .with_hop_size(16)
             .with_fft_size(64);
 
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
         let ctx = coef.clone().init_state(2);
 
         // Traversal reaches the window, and the queue through the nested
@@ -660,7 +659,7 @@ mod tests {
     #[should_panic(expected = "batch_size must be non-zero")]
     fn test_init_state_rejects_zero_batch() {
         let device = default_device();
-        let coef: SlidingStft<B> = SlidingStftConfig::new().init(&device);
+        let coef: SlidingStft = SlidingStftConfig::new().init(&device);
         coef.init_state(0);
     }
 
@@ -759,10 +758,10 @@ mod tests {
             .with_win_len(48)
             .with_hop_size(16)
             .with_fft_size(64);
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
 
         for (samples, frames) in [(48, 1), (64, 2), (80, 3), (88, 3), (95, 3), (96, 4)] {
-            let x = Tensor::<B, 2>::from_data(
+            let x = Tensor::<2>::from_data(
                 TensorData::new(vec![0.0f64; 2 * samples], [2, samples]),
                 &device,
             );
@@ -783,7 +782,7 @@ mod tests {
             .with_win_len(48)
             .with_hop_size(16)
             .with_fft_size(64);
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
 
         let batch = 2;
         let samples = 88;
@@ -791,7 +790,7 @@ mod tests {
             .map(|b| (0..samples).map(|i| sample(b, 0, i)).collect())
             .collect();
 
-        let got = coef.analyze(Tensor::<B, 2>::from_data(
+        let got = coef.analyze(Tensor::<2>::from_data(
             TensorData::new(rows.concat(), [batch, samples]),
             &device,
         ));
@@ -815,7 +814,7 @@ mod tests {
     #[serial_test::serial]
     fn test_analyze_ragged_batch_matches_single_rows() {
         type P = PerformanceBackend;
-        type PF = <P as BackendTypes>::FloatElem;
+        type PF = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
         let device = default_device();
         let _memory = DeviceMemoryGuard::<P>::new(&device);
@@ -866,7 +865,7 @@ mod tests {
         let batch = 2;
         let n_bins = cfg.n_bins();
 
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
         let mut stft = coef.init_state(batch);
         let mut hosts: Vec<HostStft> = (0..batch).map(|_| HostStft::new(&cfg)).collect();
 
@@ -877,7 +876,7 @@ mod tests {
                 .map(|b| (0..cfg.hop_size).map(|i| sample(b, step, i)).collect())
                 .collect();
 
-            let hop = Tensor::<B, 2>::from_data(
+            let hop = Tensor::<2>::from_data(
                 TensorData::new(rows.concat(), [batch, cfg.hop_size]),
                 &device,
             );
@@ -914,13 +913,13 @@ mod tests {
                 .with_hop_size(16)
                 .with_fft_size(16),
         ] {
-            let hops = Tensor::<B, 3>::random(
+            let hops = Tensor::<3>::random(
                 [steps, batch, cfg.hop_size],
                 Distribution::Default,
                 &device,
             );
 
-            let coef: SlidingStft<B> = cfg.init(&device);
+            let coef: SlidingStft = cfg.init(&device);
             let mut seq_stft = coef.init_state(batch);
             let mut step_stft = seq_stft.clone();
 
@@ -932,7 +931,7 @@ mod tests {
                 let hop = hops.clone().select_dim(0, step);
                 step_outs.push(step_stft.forward(hop));
             }
-            let step_out: Tensor<B, 4> = Tensor::stack(step_outs, 0);
+            let step_out: Tensor<4> = Tensor::stack(step_outs, 0);
 
             let tol = Tolerance::<F>::permissive();
             seq_out
@@ -953,14 +952,14 @@ mod tests {
             .with_hop_size(16)
             .with_fft_size(64);
 
-        let coef: SlidingStft<B> = cfg.init(&device);
+        let coef: SlidingStft = cfg.init(&device);
         let mut stft = coef.init_state(1);
         let hop = Tensor::random([1, 16], Distribution::Default, &device);
         stft.forward(hop);
 
         stft.reset();
         stft.queue.to_data_as::<F>().assert_eq(
-            &Tensor::<B, 2>::zeros([1, 48], &device).to_data_as::<F>(),
+            &Tensor::<2>::zeros([1, 48], &device).to_data_as::<F>(),
             true,
         );
     }

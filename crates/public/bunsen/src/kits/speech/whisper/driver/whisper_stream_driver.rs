@@ -3,8 +3,7 @@ use std::sync::Arc;
 use burn::{
     config::Config,
     module::Module,
-    prelude::Backend,
-};
+    };
 
 use crate::{
     errors::{
@@ -123,11 +122,11 @@ impl WhisperStreamDriverConfig {
     /// # Errors
     /// [`BunsenError::Invalid`] if the vocabulary size is not a Whisper
     /// layout, or as [`init_from_bundle`](Self::init_from_bundle).
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
-        model: Whisper<B>,
-        device: &B::Device,
-    ) -> BunsenResult<WhisperStreamDriver<B>> {
+        model: Whisper,
+        device: &Device,
+    ) -> BunsenResult<WhisperStreamDriver> {
         self.init_from_bundle(Arc::new(WhisperBundle::from_model(model)?), device)
     }
 
@@ -139,12 +138,12 @@ impl WhisperStreamDriverConfig {
     ///
     /// # Errors
     /// As [`init_from_bundle`](Self::init_from_bundle).
-    pub fn init_with_layout<B: Backend>(
+    pub fn init_with_layout(
         &self,
-        whisper_model: Whisper<B>,
+        whisper_model: Whisper,
         token_layout: WhisperTokenLayout,
-        device: &B::Device,
-    ) -> BunsenResult<WhisperStreamDriver<B>> {
+        device: &Device,
+    ) -> BunsenResult<WhisperStreamDriver> {
         self.init_from_bundle(
             Arc::new(WhisperBundle::new(whisper_model, token_layout)),
             device,
@@ -165,11 +164,11 @@ impl WhisperStreamDriverConfig {
     /// vocabulary, if the language and task do not fit the layout, or if
     /// the configuration asks for something this slice of the driver does
     /// not support yet.
-    pub fn init_from_bundle<B: Backend>(
+    pub fn init_from_bundle(
         &self,
         bundle: Arc<WhisperBundle<B>>,
-        device: &B::Device,
-    ) -> BunsenResult<WhisperStreamDriver<B>> {
+        device: &Device,
+    ) -> BunsenResult<WhisperStreamDriver> {
         bundle.validate()?;
         let special_ids = *bundle.layout.ids();
 
@@ -266,16 +265,16 @@ impl WhisperStreamDriverConfig {
 /// Built by [`WhisperStreamDriverConfig::init`]. Opens streams with
 /// [`new_context`](Self::new_context).
 #[derive(Clone, Debug)]
-pub struct WhisperStreamDriver<B: Backend> {
+pub struct WhisperStreamDriver {
     config: WhisperStreamDriverConfig,
 
-    audio_converter: PerceptiveAudioConverter<B>,
+    audio_converter: PerceptiveAudioConverter,
 
     /// The model, its layout and its vocabulary, shared.
     bundle: Arc<WhisperBundle<B>>,
 
     /// The voice-activity model, when one was attached.
-    vad_model: Option<SileroVad<B>>,
+    vad_model: Option<SileroVad>,
     va_filter: Option<VoiceActivityFilterConfig>,
 
     /// The sot sequence every window's decode opens with; empty when the
@@ -294,7 +293,7 @@ pub struct WhisperStreamDriver<B: Backend> {
     detokenizer: Option<Arc<dyn Detokenizer>>,
 }
 
-impl<B: Backend> WhisperStreamDriver<B> {
+impl WhisperStreamDriver {
     /// Attaches a detokenizer, so emissions carry text as well as ids.
     pub fn with_detokenizer(
         mut self,
@@ -332,7 +331,7 @@ impl<B: Backend> WhisperStreamDriver<B> {
     /// model's.
     pub fn with_vad(
         mut self,
-        vad: SileroVad<B>,
+        vad: SileroVad,
         filter: VoiceActivityFilterConfig,
     ) -> BunsenResult<Self> {
         self.check_vad(&vad, &filter)?;
@@ -345,7 +344,7 @@ impl<B: Backend> WhisperStreamDriver<B> {
     /// with each other on the chunk.
     fn check_vad(
         &self,
-        vad: &SileroVad<B>,
+        vad: &SileroVad,
         filter: &VoiceActivityFilterConfig,
     ) -> BunsenResult<()> {
         let rate = self.sample_rate();
@@ -382,17 +381,17 @@ impl<B: Backend> WhisperStreamDriver<B> {
     }
 
     /// The model.
-    pub fn whisper_model(&self) -> &Whisper<B> {
+    pub fn whisper_model(&self) -> &Whisper {
         &self.bundle.model
     }
 
     /// The mel front end.
-    pub fn audio_converter(&self) -> &PerceptiveAudioConverter<B> {
+    pub fn audio_converter(&self) -> &PerceptiveAudioConverter {
         &self.audio_converter
     }
 
     /// The voice-activity model, if one was attached.
-    pub fn silero_vad_model(&self) -> Option<&SileroVad<B>> {
+    pub fn silero_vad_model(&self) -> Option<&SileroVad> {
         self.vad_model.as_ref()
     }
 
@@ -496,7 +495,7 @@ impl<B: Backend> WhisperStreamDriver<B> {
     }
 
     /// The devices the model lives on.
-    pub fn devices(&self) -> Vec<B::Device> {
+    pub fn devices(&self) -> Vec<Device> {
         self.bundle.model.devices()
     }
 
@@ -516,7 +515,7 @@ impl<B: Backend> WhisperStreamDriver<B> {
         &self,
         clock: StreamClock,
         clamp: C,
-    ) -> BunsenResult<WhisperStreamContext<B>> {
+    ) -> BunsenResult<WhisperStreamContext> {
         if clock.rate() != self.sample_rate() {
             return Err(BunsenError::Invalid(format!(
                 "the stream clock runs at {} Hz; the model's front end at {}",

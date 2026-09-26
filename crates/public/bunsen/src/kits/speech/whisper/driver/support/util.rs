@@ -1,7 +1,6 @@
 use burn::{
     Tensor,
-    prelude::Backend,
-    tensor::BasicOps,
+    tensor::kind::Basic,
 };
 
 /// Drops the trailing frame of a whole stream's log-mels.
@@ -14,10 +13,8 @@ use burn::{
 ///
 /// # Panics
 /// If `frames` is less than 2: one frame leaves nothing to package.
-pub fn drop_last_frame<B, K>(stream: Tensor<B, 3, K>) -> Tensor<B, 3, K>
-where
-    B: Backend,
-    K: BasicOps<B>,
+pub fn drop_last_frame<K>(stream: Tensor<3, K>) -> Tensor<3, K>
+where K: Basic,
 {
     let frames = stream.dims()[1];
     assert!(
@@ -49,12 +46,12 @@ mod test {
     fn test_drop_last_frame() {
         let device = default_device();
         type B = CpuBackend;
-        let stream: Tensor<B, 3, Int> =
-            Tensor::<B, 1, Int>::arange(0..24, &device).reshape([2, 3, 4]);
+        let stream: Tensor<3, Int> =
+            Tensor::<1, Int>::arange(0..24, &device).reshape([2, 3, 4]);
 
-        let actual: Tensor<B, 3, Int> = drop_last_frame(stream.clone());
+        let actual: Tensor<3, Int> = drop_last_frame(stream.clone());
 
-        let expected: Tensor<B, 3, Int> = stream.slice(s![.., ..-1, ..]);
+        let expected: Tensor<3, Int> = stream.slice(s![.., ..-1, ..]);
 
         actual
             .to_data_as::<i32>()

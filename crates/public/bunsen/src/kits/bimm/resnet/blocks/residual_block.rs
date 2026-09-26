@@ -26,7 +26,6 @@ use burn::{
         norm::NormalizationConfig,
     },
     prelude::{
-        Backend,
         Config,
         Module,
         Tensor,
@@ -120,11 +119,11 @@ impl ResidualBlockContractConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, ResidualBlock<B>> for ResidualBlockContractConfig {
+impl ModuleInit<ResidualBlock> for ResidualBlockContractConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ResidualBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<ResidualBlock> {
         self.to_structure().try_init(device)
     }
 }
@@ -262,11 +261,11 @@ impl ResidualBlockStructureConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, ResidualBlock<B>> for ResidualBlockStructureConfig {
+impl ModuleInit<ResidualBlock> for ResidualBlockStructureConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ResidualBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<ResidualBlock> {
         Ok(match self {
             Self::Basic(config) => config.try_init(device)?.into(),
             Self::Bottleneck(config) => config.try_init(device)?.into(),
@@ -287,27 +286,27 @@ impl<B: Backend> ModuleInit<B, ResidualBlock<B>> for ResidualBlockStructureConfi
 /// [`ResidualBlockStructureConfig`].
 #[derive(Module, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum ResidualBlock<B: Backend> {
+pub enum ResidualBlock {
     /// A `ResNet` [`BasicBlock`].
-    Basic(BasicBlock<B>),
+    Basic(BasicBlock),
 
     /// A `ResNet` [`BottleneckBlock`].
-    Bottleneck(BottleneckBlock<B>),
+    Bottleneck(BottleneckBlock),
 }
 
-impl<B: Backend> From<BasicBlock<B>> for ResidualBlock<B> {
-    fn from(block: BasicBlock<B>) -> Self {
+impl From<BasicBlock> for ResidualBlock {
+    fn from(block: BasicBlock) -> Self {
         Self::Basic(block)
     }
 }
 
-impl<B: Backend> From<BottleneckBlock<B>> for ResidualBlock<B> {
-    fn from(block: BottleneckBlock<B>) -> Self {
+impl From<BottleneckBlock> for ResidualBlock {
+    fn from(block: BottleneckBlock) -> Self {
         Self::Bottleneck(block)
     }
 }
 
-impl<B: Backend> ResidualBlockMeta for ResidualBlock<B> {
+impl ResidualBlockMeta for ResidualBlock {
     fn in_planes(&self) -> usize {
         match self {
             Self::Basic(block) => block.in_planes(),
@@ -330,7 +329,7 @@ impl<B: Backend> ResidualBlockMeta for ResidualBlock<B> {
     }
 }
 
-impl<B: Backend> ResidualBlock<B> {
+impl ResidualBlock {
     /// Debug print.
     pub fn debug_print(&self) {
         match self {
@@ -351,8 +350,8 @@ impl<B: Backend> ResidualBlock<B> {
     /// A `[batch, out_planes, out_height, out_width]` tensor;
     pub fn forward(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+        input: Tensor<4>,
+    ) -> Tensor<4> {
         match self {
             Self::Basic(block) => block.forward(input),
             Self::Bottleneck(block) => block.forward(input),
@@ -430,7 +429,7 @@ mod tests {
     fn test_residual_block_basic_block() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch_size = 2;
         let in_planes = 16;
@@ -444,7 +443,7 @@ mod tests {
             .with_stride(2)
             .into();
 
-        let block: ResidualBlock<B> = cfg.init(&device);
+        let block: ResidualBlock = cfg.init(&device);
         assert!(matches!(block, ResidualBlock::Basic(_)));
         assert_eq!(block.in_planes(), in_planes);
         assert_eq!(block.out_planes(), planes);
@@ -471,7 +470,7 @@ mod tests {
     fn test_residual_block_bottleneck_block() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch_size = 2;
         let in_planes = 16;
@@ -485,7 +484,7 @@ mod tests {
             .with_stride(2)
             .into();
 
-        let block: ResidualBlock<B> = cfg.init(&device);
+        let block: ResidualBlock = cfg.init(&device);
         assert!(matches!(block, ResidualBlock::Bottleneck(_)));
         assert_eq!(block.in_planes(), in_planes);
         assert_eq!(block.out_planes(), planes);

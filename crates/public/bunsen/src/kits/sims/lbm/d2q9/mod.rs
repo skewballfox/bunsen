@@ -87,20 +87,20 @@ mod tests {
     fn test_closed_box_steps_conserve_mass() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let k = 5;
         let height = 6;
         let width = 6;
         let debug = false;
 
-        let solid_mask: Tensor<B, 2, Bool> = Tensor::full([height, width], false, &device)
+        let solid_mask: Tensor<2, Bool> = Tensor::full([height, width], false, &device)
             .slice_fill(s![0, ..], true)
             .slice_fill(s![-1, ..], true)
             .slice_fill(s![.., 0], true)
             .slice_fill(s![.., -1], true);
 
-        let dist_t0: Tensor<B, 4> = Tensor::zeros([height, width, 3, 3], &device)
+        let dist_t0: Tensor<4> = Tensor::zeros([height, width, 3, 3], &device)
             .slice_fill(s![.., .., 1, 1], 1.0)
             .slice_fill(s![1, 1, 1, 1], 3.0)
             .slice_fill(s![1, -2, 1, 1], 5.0)
@@ -110,7 +110,7 @@ mod tests {
             dbg_dist("dist_t0", dist_t0.clone());
         }
 
-        let initial_mass: f64 = dist_t0.clone().sum().into_scalar().elem();
+        let initial_mass: f64 = dist_t0.clone().sum().into_scalar();
 
         let lbm_tables = space::LbmTables::init(&device);
 
@@ -134,7 +134,7 @@ mod tests {
             }
 
             current = thermal_phase;
-            let current_mass: f64 = current.clone().sum().into_scalar().elem();
+            let current_mass: f64 = current.clone().sum().into_scalar();
 
             assert!(
                 (current_mass - initial_mass).abs() <= 1e-4 * initial_mass,

@@ -45,10 +45,8 @@ use burn::{
         decay::WeightDecayConfig,
     },
     prelude::Backend,
-    record::CompactRecorder,
     tensor::{
         Tensor,
-        backend::AutodiffBackend,
         s,
     },
     train::{
@@ -210,7 +208,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     let artifact_dir: &str = args.artifact_dir.as_ref();
     ensure_artifact_dir(artifact_dir)?;
 
-    let device: B::Device = Default::default();
+    let device: Device = Default::default();
 
     let shard_cache = BunsenDiskCache::default();
     let shard_paths = args.shards.fetch_paths(
@@ -262,7 +260,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         .with_n_layer(args.n_layer)
         .with_vocab_size(vocab_size);
 
-    let gpt: NanoChatGpt<B> = gpt_config.clone().init::<B>(&device);
+    let gpt: NanoChatGpt = gpt_config.clone().init::<B>(&device);
 
     let host = GptHost { gpt };
 
@@ -273,7 +271,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let training_data_loader: ChatDataLoader<B> = ChatDataLoader::new(
+    let training_data_loader: ChatDataLoader = ChatDataLoader::new(
         training_paths,
         Some(Arc::new(Mutex::new(StdRng::seed_from_u64(0)))),
         &device,
@@ -281,7 +279,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         dl_config.clone(),
     );
 
-    let validation_data_loader: ChatDataLoader<B::InnerBackend> =
+    let validation_data_loader: ChatDataLoader</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend> =
         ChatDataLoader::new(validation_paths, None, &device, tok.clone(), dl_config);
 
     let training = SupervisedTraining::new(
@@ -291,8 +289,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     )
     .grads_accumulation(args.grads_accumulation)
     .num_epochs(args.num_epochs)
-    .metrics((LossMetric::new(), LearningRateMetric::new()))
-    .with_file_checkpointer(CompactRecorder::new())
+    .metrics((LossMetric::new(), LearningRateMetric::new())).with_default_checkpointers()
     .summary();
 
     let mut mtree = XmlModuleTree::build(&host);
@@ -419,8 +416,7 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     let result = training.launch(Learner::new(host, optimizer, warmup_scheduler));
 
     result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .model.save_file(format!("{artifact_dir}/model"))
         .expect("Trained model should be saved successfully");
 
     Ok(())
@@ -428,24 +424,24 @@ fn run<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
 
 #[derive(Module, Debug)]
 pub struct GptHost<B: Backend> {
-    pub gpt: NanoChatGpt<B>,
+    pub gpt: NanoChatGpt,
 }
 
-impl<B: Backend> GptHost<B> {
+impl<B: Backend> GptHost {
     fn loss_step(
         &self,
-        input: Tensor<B, 2, burn::prelude::Int>,
+        input: Tensor<2, burn::prelude::Int>,
     ) -> ClassificationOutput<B> {
-        let inputs: Tensor<B, 2, burn::prelude::Int> = input.clone().slice(s![.., ..-1]);
-        let targets: Tensor<B, 2, burn::prelude::Int> = input.slice(s![.., 1..]);
+        let inputs: Tensor<2, burn::prelude::Int> = input.clone().slice(s![.., ..-1]);
+        let targets: Tensor<2, burn::prelude::Int> = input.slice(s![.., 1..]);
 
         let mut kv_cache = None;
 
         // Logits.
-        let outputs: Tensor<B, 3> = self.gpt.forward(inputs, &mut kv_cache);
+        let outputs: Tensor<3> = self.gpt.forward(inputs, &mut kv_cache);
 
-        let output_flatten: Tensor<B, 2> = outputs.flatten(0, 1);
-        let targets_flatten: Tensor<B, 1, burn::prelude::Int> = targets.flatten(0, 1);
+        let output_flatten: Tensor<2> = outputs.flatten(0, 1);
+        let targets_flatten: Tensor<1, burn::prelude::Int> = targets.flatten(0, 1);
 
         let loss = CrossEntropyLossConfig::new()
             .init(&output_flatten.device())
@@ -459,8 +455,8 @@ impl<B: Backend> GptHost<B> {
     }
 }
 
-impl<B: AutodiffBackend> TrainStep for GptHost<B> {
-    type Input = Tensor<B, 2, burn::prelude::Int>;
+impl<B: AutodiffBackend> TrainStep for GptHost {
+    type Input = Tensor<2, burn::prelude::Int>;
     type Output = ClassificationOutput<B>;
 
     fn step(
@@ -474,8 +470,8 @@ impl<B: AutodiffBackend> TrainStep for GptHost<B> {
     }
 }
 
-impl<B: Backend> InferenceStep for GptHost<B> {
-    type Input = Tensor<B, 2, burn::prelude::Int>;
+impl<B: Backend> InferenceStep for GptHost {
+    type Input = Tensor<2, burn::prelude::Int>;
     type Output = ClassificationOutput<B>;
 
     fn step(

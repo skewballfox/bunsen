@@ -7,7 +7,6 @@ use burn::{
     config::Config,
     module::Module,
     prelude::{
-        Backend,
         Tensor,
     },
 };
@@ -64,11 +63,11 @@ impl DropBlock2d {
     /// # Returns
     ///
     /// A tensor of the same shape, type, and device.
-    pub fn forward<B: Backend>(
+    pub fn forward(
         &self,
-        tensor: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
-        if B::ad_enabled(&tensor.device()) {
+        tensor: Tensor<4>,
+    ) -> Tensor<4> {
+        if tensor.device().is_autodiff() {
             drop_block_2d(tensor.clone(), &self.options)
         } else {
             tensor
@@ -101,7 +100,7 @@ mod tests {
         let width = height;
         let shape = [batch_size, channels, height, width];
 
-        let tensor: Tensor<B, 4> = Tensor::ones(shape, &device);
+        let tensor: Tensor<4> = Tensor::ones(shape, &device);
 
         assert_eq!(B::ad_enabled(&tensor.device()), false);
         let result = module.forward(tensor.clone());
@@ -113,7 +112,7 @@ mod tests {
     #[test]
     fn test_module_training() {
         type I = CpuBackend;
-        type B = Autodiff<I>;
+        type B = /* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<I>;
         let device = default_device();
 
         let drop_prob = 0.1;
@@ -132,7 +131,7 @@ mod tests {
         let width = height;
         let shape = [batch_size, channels, height, width];
 
-        let tensor: Tensor<B, 4> = Tensor::ones(shape, &device);
+        let tensor: Tensor<4> = Tensor::ones(shape, &device);
 
         assert_eq!(B::ad_enabled(&tensor.device()), true);
         let drop = module.forward(tensor.clone());
@@ -141,12 +140,12 @@ mod tests {
         let numel = drop.shape().num_elements();
 
         // They've all been rescaled upwards.
-        let keep_count = drop.clone().greater_elem(1.0).int().sum().into_scalar() as usize;
+        let keep_count = drop.clone().greater_elem(1.0).int().sum().into_scalar::<i64>() as usize;
         let drop_count = numel - keep_count;
         let drop_ratio = drop_count as f64 / numel as f64;
         assert!((drop_ratio - drop_prob).abs() < 0.15);
 
-        let total = drop.sum().into_scalar() as f64;
+        let total = drop.sum().into_scalar::<f64>();
         let norm = total / numel as f64;
         assert!((norm - 1.0).abs() < 0.01);
     }

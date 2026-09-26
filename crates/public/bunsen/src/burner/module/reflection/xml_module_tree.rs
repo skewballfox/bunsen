@@ -17,8 +17,7 @@ use burn::{
         Linear,
         LinearConfig,
     },
-    prelude::Backend,
-};
+    };
 use xee_xpath::{
     Documents,
     Itemable,
@@ -80,7 +79,7 @@ impl Debug for XmlModuleTree {
 
 impl XmlModuleTree {
     /// Builds a [`XmlModuleTree`] for a [`Module`].
-    pub fn build<B: Backend, M: Module<B>>(module: &M) -> Self {
+    pub fn build<M: Module>(module: &M) -> Self {
         XmlModuleTreeBuilder::build(module)
     }
 
@@ -674,7 +673,7 @@ mod tests {
     fn test_debug() {
         type B = CpuBackend;
         let device = default_device();
-        let module: Linear<B> = LinearConfig::new(2, 3).init(&device);
+        let module: Linear = LinearConfig::new(2, 3).init(&device);
 
         let weight_desc: TensorParamDesc = TensorParamDesc::from(&module.weight);
         let bias_ref = module.bias.as_ref().unwrap();
@@ -718,7 +717,7 @@ mod tests {
     fn test_to_xml() {
         type B = CpuBackend;
         let device = default_device();
-        let module: Linear<B> = LinearConfig::new(2, 3).init(&device);
+        let module: Linear = LinearConfig::new(2, 3).init(&device);
 
         let weight_desc: TensorParamDesc = TensorParamDesc::from(&module.weight);
         let bias_ref = module.bias.as_ref().unwrap();

@@ -14,7 +14,6 @@
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         Int,
     },
     tensor::{
@@ -79,7 +78,7 @@ impl WhisperGreedyDecoder {
     }
 }
 
-impl<B: Backend> TokenDecoder<B> for WhisperGreedyDecoder {
+impl TokenDecoder<B> for WhisperGreedyDecoder {
     fn group_size(&self) -> usize {
         self.group
     }
@@ -91,7 +90,7 @@ impl<B: Backend> TokenDecoder<B> for WhisperGreedyDecoder {
     fn update(
         &mut self,
         tokens: &mut Vec<Vec<i64>>,
-        logits: Tensor<B, 2>,
+        logits: Tensor<2>,
         sum_logprobs: &mut [f32],
         _reorder: &mut dyn FnMut(&[usize]),
     ) -> (Vec<i64>, bool) {
@@ -100,10 +99,10 @@ impl<B: Backend> TokenDecoder<B> for WhisperGreedyDecoder {
             self.finished = vec![false; rows];
         }
 
-        let picked: Tensor<B, 2, Int> = if self.temperature > 0.0 {
+        let picked: Tensor<2, Int> = if self.temperature > 0.0 {
             // Gumbel-max: argmax(logits / t + g), g = -log(-log u), is a
             // sample from softmax(logits / t). Suppressed ids stay -inf.
-            let uniform: Tensor<B, 2> = Tensor::random(
+            let uniform: Tensor<2> = Tensor::random(
                 logits.dims(),
                 Distribution::Uniform(0.0, 1.0),
                 &logits.device(),
@@ -117,15 +116,11 @@ impl<B: Backend> TokenDecoder<B> for WhisperGreedyDecoder {
         let chosen: Vec<i64> = picked
             .clone()
             .into_data()
-            .convert::<i64>()
-            .to_vec()
-            .unwrap();
+            .convert::<i64>().try_to_vec().unwrap();
         let logprobs: Vec<f32> = log_softmax(logits, 1)
             .gather(1, picked)
             .into_data()
-            .convert::<f32>()
-            .to_vec()
-            .unwrap();
+            .convert::<f32>().try_to_vec().unwrap();
 
         let mut feed = Vec::with_capacity(rows);
         for row in 0..rows {
@@ -173,7 +168,7 @@ mod tests {
 
     type B = CpuBackend;
 
-    fn logits(rows: &[&[f32]]) -> Tensor<B, 2> {
+    fn logits(rows: &[&[f32]]) -> Tensor<2> {
         let vocab = rows[0].len();
         let flat: Vec<f32> = rows.iter().flat_map(|r| r.iter().copied()).collect();
         Tensor::from_data(

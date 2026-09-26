@@ -7,10 +7,10 @@ use std::{
     sync::LazyLock,
 };
 
+/* TODO(burn 0.22 migration): burn::tensor::backend was removed, and burn::tensor::Device does not implement DeviceOps. Use &Device. See BREAKING_CHANGES.md #27, #35. */
 use burn::{
     module::Param,
     prelude::{
-        Backend,
         Tensor,
         TensorData,
     },
@@ -59,17 +59,17 @@ pub fn assert_close_to_vec<T>(
 /// Panics if `expected` does not hold exactly `actual.dims()` elements, or if
 /// any pair differs by more than `tolerance`.
 pub fn assert_tensor_close_to_vec<B, const D: usize>(
-    actual: &Tensor<B, D>,
+    actual: &Tensor<D>,
     expected: &[f64],
-    tolerance: Tolerance<B::FloatElem>,
+    tolerance: Tolerance</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>,
 ) where
     B: Backend,
-    B::FloatElem: Float,
+    /* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem: Float,
 {
-    let expected = TensorData::new(expected.to_vec(), actual.dims()).convert::<B::FloatElem>();
+    let expected = TensorData::new(expected.to_vec(), actual.dims()).convert::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>();
     actual
-        .to_data_as::<B::FloatElem>()
-        .assert_approx_eq::<B::FloatElem>(&expected, tolerance);
+        .to_data_as::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>()
+        .assert_approx_eq::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>(&expected, tolerance);
 }
 
 /// Asserts that two tensors of the same shape are approximately equal.
@@ -82,16 +82,16 @@ pub fn assert_tensor_close_to_vec<B, const D: usize>(
 /// Panics if the shapes differ, or if any pair of values differs by more than
 /// `tolerance`.
 pub fn assert_tensors_close<B, const D: usize>(
-    actual: &Tensor<B, D>,
-    expected: &Tensor<B, D>,
-    tolerance: Tolerance<B::FloatElem>,
+    actual: &Tensor<D>,
+    expected: &Tensor<D>,
+    tolerance: Tolerance</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>,
 ) where
     B: Backend,
-    B::FloatElem: Float,
+    /* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem: Float,
 {
     actual
-        .to_data_as::<B::FloatElem>()
-        .assert_approx_eq::<B::FloatElem>(&expected.to_data_as::<B::FloatElem>(), tolerance);
+        .to_data_as::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>()
+        .assert_approx_eq::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>(&expected.to_data_as::</* TODO(burn 0.22 migration): B::FloatElem no longer exists -- the backend's float dtype is now a runtime Device setting (device.settings().float_dtype), not a compile-time associated type. This call site needs a &Device argument threaded in; see BREAKING_CHANGES.md #14. */ B::FloatElem>(), tolerance);
 }
 
 /// Applies a parameter's **load**-path mapping to a tensor.
@@ -104,9 +104,9 @@ pub fn assert_tensors_close<B, const D: usize>(
 /// [`repair_pytorch_strided_weight`]:
 ///     crate::burner::store::repair_pytorch_strided_weight
 pub fn param_load_mapping<B, const D: usize>(
-    param: &Param<Tensor<B, D>>,
-    tensor: Tensor<B, D>,
-) -> Tensor<B, D>
+    param: &Param<Tensor<D>>,
+    tensor: Tensor<D>,
+) -> Tensor<D>
 where
     B: Backend,
 {
@@ -139,7 +139,7 @@ mod tests {
     fn square(
         values: [f64; 4],
         device: &Device<B>,
-    ) -> Tensor<B, 2> {
+    ) -> Tensor<2> {
         Tensor::from_data(TensorData::new(values.to_vec(), [2, 2]), device)
     }
 
@@ -174,7 +174,7 @@ mod tests {
     #[serial]
     fn test_assert_tensor_close_to_vec() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let t = square([1.0, 2.0, 3.0, 4.0], &device);
         assert_tensor_close_to_vec(&t, &[1.0, 2.0, 3.0, 4.0], Tolerance::default());
     }
@@ -184,7 +184,7 @@ mod tests {
     #[should_panic]
     fn test_assert_tensor_close_to_vec_bad_values() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let t = square([1.0, 2.0, 3.0, 4.0], &device);
         assert_tensor_close_to_vec(&t, &[1.0, 2.0, 3.0, 9.0], Tolerance::default());
     }
@@ -193,7 +193,7 @@ mod tests {
     #[serial]
     fn test_assert_tensors_close() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let a = square([1.0, 2.0, 3.0, 4.0], &device);
         let b = square([1.0, 2.0, 3.0, 4.0], &device);
         assert_tensors_close(&a, &b, Tolerance::default());
@@ -204,7 +204,7 @@ mod tests {
     #[should_panic]
     fn test_assert_tensors_close_bad_values() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let a = square([1.0, 2.0, 3.0, 4.0], &device);
         let b = square([1.0, 2.0, 3.0, 9.0], &device);
         assert_tensors_close(&a, &b, Tolerance::default());

@@ -6,12 +6,11 @@ use std::{
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         Shape,
         TensorData,
     },
     tensor::{
-        BasicOps,
+        kind::Basic,
         DType,
     },
 };
@@ -39,10 +38,8 @@ impl TensorRankType {
     /// Construct from `&Tensor`.
     ///
     /// Exists to force better error messages for `Self::from(tensor)`.
-    pub fn from_tensor<B, const R: usize, K>(tensor: &Tensor<B, R, K>) -> Self
-    where
-        B: Backend,
-        K: BasicOps<B> + ParamKindBinding,
+    pub fn from_tensor<const R: usize, K>(tensor: &Tensor<R, K>) -> Self
+    where K: Basic + ParamKindBinding,
     {
         Self {
             kind: TensorKindDesc::for_kind::<K>(),
@@ -55,17 +52,15 @@ impl TensorRankType {
     ///
     /// Exists to force better error messages for `Self::from(data)`.
     pub fn from_tensor_data(data: &TensorData) -> Self {
-        Self::new(data.dtype, data.shape.rank())
+        Self::new(data.dtype(), data.shape().rank())
     }
 }
 
-impl<B, const R: usize, K> From<&Tensor<B, R, K>> for TensorRankType
-where
-    B: Backend,
-    K: BasicOps<B>,
+impl<const R: usize, K> From<&Tensor<R, K>> for TensorRankType
+where K: Basic,
     K: ParamKindBinding,
 {
-    fn from(tensor: &Tensor<B, R, K>) -> Self {
+    fn from(tensor: &Tensor<R, K>) -> Self {
         Self::from_tensor(tensor)
     }
 }
@@ -144,10 +139,8 @@ impl TensorDesc {
     /// Construct from `&Tensor`.
     ///
     /// Exists to force better error messages for `Self::from(tensor)`.
-    pub fn from_tensor<B, const R: usize, K>(tensor: &Tensor<B, R, K>) -> Self
-    where
-        B: Backend,
-        K: BasicOps<B> + ParamKindBinding,
+    pub fn from_tensor<const R: usize, K>(tensor: &Tensor<R, K>) -> Self
+    where K: Basic + ParamKindBinding,
     {
         Self {
             kind: TensorKindDesc::for_kind::<K>(),
@@ -160,17 +153,15 @@ impl TensorDesc {
     ///
     /// Exists to force better error messages for `Self::from(data)`.
     pub fn from_tensor_data(data: &TensorData) -> Self {
-        Self::new(data.dtype, data.shape.clone())
+        Self::new(data.dtype(), data.shape().clone())
     }
 }
 
-impl<B, const R: usize, K> From<&Tensor<B, R, K>> for TensorDesc
-where
-    B: Backend,
-    K: BasicOps<B>,
+impl<const R: usize, K> From<&Tensor<R, K>> for TensorDesc
+where K: Basic,
     K: ParamKindBinding,
 {
-    fn from(param: &Tensor<B, R, K>) -> Self {
+    fn from(param: &Tensor<R, K>) -> Self {
         Self::from_tensor(param)
     }
 }
@@ -286,12 +277,12 @@ mod tests {
     fn test_tensor_rank_desc() {
         type B = PerformanceBackend;
         let device = backend_device::<B>();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         // Float
         {
             // Tensor
-            let tensor: Tensor<B, 2> = Tensor::ones([2, 3], &device);
+            let tensor: Tensor<2> = Tensor::ones([2, 3], &device);
             {
                 let dtype = tensor.dtype();
 
@@ -313,7 +304,7 @@ mod tests {
             // TensorData
             let data: TensorData = tensor.to_data();
             {
-                let dtype = data.dtype;
+                let dtype = data.dtype();
 
                 let rank_desc: TensorRankType = TensorRankType::from(&data);
                 assert_eq!(rank_desc.kind(), TensorKindDesc::Float);
@@ -334,7 +325,7 @@ mod tests {
         // Int
         {
             // Tensor
-            let tensor: Tensor<B, 2, Int> = Tensor::ones([2, 3], &device);
+            let tensor: Tensor<2, Int> = Tensor::ones([2, 3], &device);
             {
                 let dtype = tensor.dtype();
 
@@ -356,7 +347,7 @@ mod tests {
             // TensorData
             let data = tensor.to_data();
             {
-                let dtype = data.dtype;
+                let dtype = data.dtype();
 
                 let rank_desc: TensorRankType = TensorRankType::from(&data);
                 assert_eq!(rank_desc.kind(), TensorKindDesc::Int);
@@ -377,7 +368,7 @@ mod tests {
         // Bool
         {
             // Tensor
-            let tensor: Tensor<B, 2, Bool> = Tensor::zeros([2, 3], &device);
+            let tensor: Tensor<2, Bool> = Tensor::zeros([2, 3], &device);
             {
                 let dtype = tensor.dtype();
 
@@ -399,7 +390,7 @@ mod tests {
             // TensorData
             let data = tensor.to_data();
             {
-                let dtype = data.dtype;
+                let dtype = data.dtype();
 
                 let rank_desc: TensorRankType = TensorRankType::from(&data);
                 assert_eq!(rank_desc.kind(), TensorKindDesc::Bool);

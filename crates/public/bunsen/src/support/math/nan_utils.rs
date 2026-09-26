@@ -2,16 +2,15 @@
 
 use burn::{
     Tensor,
-    prelude::Backend,
-};
+    };
 
 /// Maps nan and infinities to numbers.
-pub fn nan_to_num<B: Backend, const D: usize>(
-    tensor: Tensor<B, D>,
+pub fn nan_to_num<const D: usize>(
+    tensor: Tensor<D>,
     nan_val: f64,
     neg_inf_val: f64,
     pos_inf_val: f64,
-) -> Tensor<B, D> {
+) -> Tensor<D> {
     let is_nan = tensor.clone().is_nan();
     let is_inf = tensor.clone().is_inf();
     let is_neg = tensor.clone().lower_elem(0.0);

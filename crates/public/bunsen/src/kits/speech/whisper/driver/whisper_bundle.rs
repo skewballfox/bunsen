@@ -14,7 +14,6 @@ use std::{
     sync::Arc,
 };
 
-use burn::prelude::Backend;
 
 use crate::{
     errors::{
@@ -42,9 +41,9 @@ use crate::{
 /// A loaded Whisper model with its token layout and, when it has one, its
 /// vocabulary.
 #[derive(Debug)]
-pub struct WhisperBundle<B: Backend> {
+pub struct WhisperBundle {
     /// The model.
-    pub model: Whisper<B>,
+    pub model: Whisper,
 
     /// The token layout the model's vocabulary follows.
     pub layout: WhisperTokenLayout,
@@ -54,11 +53,11 @@ pub struct WhisperBundle<B: Backend> {
     pub ranks: Option<TiktokenRanks>,
 }
 
-impl<B: Backend> WhisperBundle<B> {
+impl WhisperBundle<B> {
     /// A bundle over a model with an explicit token layout, and no
     /// vocabulary.
     pub fn new(
-        model: Whisper<B>,
+        model: Whisper,
         layout: WhisperTokenLayout,
     ) -> Self {
         Self {
@@ -74,7 +73,7 @@ impl<B: Backend> WhisperBundle<B> {
     /// # Errors
     /// [`BunsenError::Invalid`] if the vocabulary size is not a Whisper
     /// layout.
-    pub fn from_model(model: Whisper<B>) -> BunsenResult<Self> {
+    pub fn from_model(model: Whisper) -> BunsenResult<Self> {
         let layout = model.token_layout().policy_for_vocab(model.vocab_size())?;
         Ok(Self::new(model, layout))
     }
@@ -133,7 +132,7 @@ impl<B: Backend> WhisperBundle<B> {
     }
 }
 
-impl<B: Backend> fmt::Display for WhisperBundle<B> {
+impl fmt::Display for WhisperBundle<B> {
     /// One line of what was loaded: `80 mels, vocabulary 51865, d_model
     /// 512, 6 + 6 layers, 50257 ranks`, or `ids only` in place of the
     /// ranks for a bundle without a vocabulary.

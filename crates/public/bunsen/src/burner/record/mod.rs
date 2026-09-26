@@ -11,7 +11,6 @@ use alloc::{
 use core::iter;
 
 use burn::{
-    prelude::Backend,
     record::{
         HalfPrecisionSettings,
         Record,
@@ -23,7 +22,7 @@ use serde_json::{
 };
 
 /// Hacky function to display a record.
-pub fn display_record<B: Backend, R: Record<B>>(record: R) {
+pub fn display_record<R: Record>(record: R) {
     fn shape_of_numeric_array(arr: &[Value]) -> Option<Vec<usize>> {
         if arr.is_empty() {
             return Some(vec![0]);
@@ -73,7 +72,7 @@ pub fn display_record<B: Backend, R: Record<B>>(record: R) {
         }
     }
 
-    let sr_item = record.into_item::<HalfPrecisionSettings>();
+    let sr_item = /* TODO(burn 0.22 migration): records are ModuleRecord; PrecisionSettings and into_item were removed. See BREAKING_CHANGES.md #26. */ record.into_item::<HalfPrecisionSettings>();
     let value: Value = serde_json::to_value(&sr_item).unwrap();
     let value = rewrite_value(value);
     println!("{}", serde_json::to_string_pretty(&value).unwrap());

@@ -7,11 +7,10 @@ use std::{
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         TensorData,
     },
     tensor::{
-        BasicOps,
+        kind::Basic,
         DType,
         Element,
         FloatDType,
@@ -92,7 +91,7 @@ impl<'a> DataArg<'a> for &'a TensorData {
     }
 }
 
-impl<'a, B: Backend, const R: usize, K: BasicOps<B>> DataArg<'a> for &'a Tensor<B, R, K> {
+impl<'a, B: Backend, const R: usize, K: Basic> DataArg<'a> for &'a Tensor<R, K> {
     fn into_data_ref(self) -> CloneRef<'a, TensorData> {
         CloneRef::Clone(self.to_data())
     }
@@ -431,7 +430,7 @@ mod tests {
             type B = PerformanceBackend;
             let device = default_device();
 
-            let iota: Tensor<B, 1> = Tensor::arange(0..10, &device).float();
+            let iota: Tensor<1> = Tensor::arange(0..10, &device).float();
             probe.assert_eq_as::<f64>("iota", &iota).ok_or_panic();
         }
 
@@ -441,7 +440,7 @@ mod tests {
             type B = CpuBackend;
             let device = default_device();
 
-            let iota: Tensor<B, 1> = Tensor::arange(5..15, &device).float();
+            let iota: Tensor<1> = Tensor::arange(5..15, &device).float();
             probe.assert_eq_as::<f64>("iota", &iota).ok_or_panic();
         }
     }
@@ -449,10 +448,10 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_stream() -> BunsenResult<()> {
-        fn example<B: Backend>(probe: &mut AuditProbe) -> BunsenResult<()> {
+        fn example(probe: &mut AuditProbe) -> BunsenResult<()> {
             let device = default_device();
 
-            let iota: Tensor<B, 1> = Tensor::arange(0..10, &device).float();
+            let iota: Tensor<1> = Tensor::arange(0..10, &device).float();
             probe.assert_eq_as::<f64>("iota", &iota)?;
             probe.assert_eq_cast("iota", &iota, DType::F16)?;
 

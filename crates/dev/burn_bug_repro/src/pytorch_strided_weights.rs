@@ -80,9 +80,9 @@ const D_OUTPUT: usize = 8;
 
 /// A single `Linear`, to give the store a `Struct:Linear` destination.
 #[derive(Module, Debug)]
-pub struct StridedLinearProbe<B: Backend> {
+pub struct StridedLinearProbe {
     /// The projection under test.
-    pub lin: Linear<B>,
+    pub lin: Linear,
 }
 
 /// Loads the fixture's `key` entry into a `Linear(3, 8)`.
@@ -90,11 +90,11 @@ pub struct StridedLinearProbe<B: Backend> {
 /// # Arguments
 /// * `key`: the checkpoint's top-level key — `"strided"` or `"contiguous"`.
 /// * `repair`: whether to attach [`repair_pytorch_strided_weight`].
-pub fn load_probe<B: Backend>(
+pub fn load_probe(
     key: &str,
     repair: bool,
-    device: &B::Device,
-) -> StridedLinearProbe<B> {
+    device: &Device,
+) -> StridedLinearProbe {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("testdata/pytorch_strided_linear.pt");
 
@@ -128,15 +128,13 @@ pub fn expected_weight() -> Vec<f64> {
 }
 
 /// Reads a `[3, 8]` weight back as `f64`, row-major.
-pub fn weight_of<B: Backend>(probe: &StridedLinearProbe<B>) -> Vec<f64> {
+pub fn weight_of(probe: &StridedLinearProbe) -> Vec<f64> {
     probe
         .lin
         .weight
         .val()
         .cast(burn::tensor::DType::F64)
-        .to_data()
-        .to_vec()
-        .unwrap()
+        .to_data().try_to_vec().unwrap()
 }
 
 #[cfg(test)]

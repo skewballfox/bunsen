@@ -13,7 +13,6 @@ use burn::{
         },
     },
     prelude::{
-        Backend,
         Tensor,
     },
 };
@@ -35,11 +34,11 @@ use crate::{
 ///
 /// # Returns
 /// `[batch, seq_len, n_states]`
-pub fn layer_norm_mlp<B: Backend>(
-    layer_norm: &LayerNorm<B>,
-    mlp: &Mlp<B>,
-    x: Tensor<B, 3>,
-) -> Tensor<B, 3> {
+pub fn layer_norm_mlp(
+    layer_norm: &LayerNorm,
+    mlp: &Mlp,
+    x: Tensor<3>,
+) -> Tensor<3> {
     mlp.forward(layer_norm.forward(x))
 }
 
@@ -92,11 +91,11 @@ impl MlpConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, Mlp<B>> for MlpConfig {
+impl ModuleInit<Mlp> for MlpConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<Mlp<B>> {
+        device: &Device,
+    ) -> BunsenResult<Mlp> {
         let linear1 = LinearConfig::new(self.n_embed(), self.hidden_size())
             .with_bias(self.bias)
             .init(device);
@@ -123,9 +122,9 @@ impl<B: Backend> ModuleInit<B, Mlp<B>> for MlpConfig {
 ///
 /// Built by [`MlpConfig`].
 #[derive(Module, Debug)]
-pub struct Mlp<B: Backend> {
+pub struct Mlp {
     /// Feed Forward Layer.
-    pub linear1: Linear<B>,
+    pub linear1: Linear,
 
     /// Activation.
     pub act: Activation<B>,
@@ -134,10 +133,10 @@ pub struct Mlp<B: Backend> {
     pub act_exponent: Option<f64>,
 
     /// Output Projection.
-    pub linear2: Linear<B>,
+    pub linear2: Linear,
 }
 
-impl<B: Backend> FixPytorchLoadMappers for Mlp<B> {
+impl FixPytorchLoadMappers for Mlp {
     /// Both projections are `Linear`; the activation holds no parameters.
     fn fix_pytorch_load_mappers(mut self) -> Self {
         self.linear1 = self.linear1.fix_pytorch_load_mappers();
@@ -146,7 +145,7 @@ impl<B: Backend> FixPytorchLoadMappers for Mlp<B> {
     }
 }
 
-impl<B: Backend> MlpMeta for Mlp<B> {
+impl MlpMeta for Mlp {
     fn n_embed(&self) -> usize {
         self.linear1.weight.dims()[0]
     }
@@ -156,7 +155,7 @@ impl<B: Backend> MlpMeta for Mlp<B> {
     }
 }
 
-impl<B: Backend> Mlp<B> {
+impl Mlp {
     /// MLP Forward Pass.
     ///
     /// # Arguments
@@ -166,8 +165,8 @@ impl<B: Backend> Mlp<B> {
     /// a `[batch, time, embed]` result.
     pub fn forward(
         &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        x: Tensor<3>,
+    ) -> Tensor<3> {
         #[cfg(any(debug_assertions, test))]
         let [batch, time] = crate::contracts::unpack_shape_contract!(
             ["batch", "time", "embed"],
@@ -228,7 +227,7 @@ mod tests {
     fn test_mlp() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         for activation in [ActivationConfig::Relu, ActivationConfig::Gelu] {
             for ef in [4, 3] {
@@ -241,7 +240,7 @@ mod tests {
                     .with_activation(activation.clone())
                     .with_act_exponent(Some(2.0));
 
-                let mlp: Mlp<B> = cfg.init(&device);
+                let mlp: Mlp = cfg.init(&device);
 
                 assert_eq!(mlp.n_embed(), n_embed);
 

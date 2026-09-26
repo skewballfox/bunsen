@@ -10,7 +10,6 @@
 
 use std::collections::BTreeMap;
 
-use burn::prelude::Backend;
 
 use super::{
     CacheStatus,
@@ -104,10 +103,10 @@ impl<H: Construct> Deferred<H> {
     /// # Errors
     /// As [`Construct::plan`], [`PretrainedCache::load`] and
     /// [`Construct::construct`].
-    pub fn load<B: Backend>(
+    pub fn load(
         &self,
         cache: &PretrainedCache,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Loaded<H::Built<B>>> {
         let planned = self.plan(cache)?;
         let resources = cache.load(H::KIT, &planned)?;

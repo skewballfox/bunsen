@@ -21,7 +21,6 @@
 
 use std::sync::Arc;
 
-use burn::prelude::Backend;
 
 use crate::{
     data::pretrained::{
@@ -56,11 +55,11 @@ impl PretrainedFactory<WhisperConstruct> {
     ///
     /// # Errors
     /// As [`load`](Self::load).
-    pub fn load_bundle<B: Backend>(
+    pub fn load_bundle(
         &self,
         spec: &str,
         cache: &PretrainedCache,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Arc<WhisperBundle<B>>> {
         Ok(self.load::<B>(spec, cache, device)?.handle)
     }
@@ -84,10 +83,10 @@ impl Deferred<WhisperConstruct> {
     ///
     /// # Errors
     /// As [`load`](Self::load).
-    pub fn load_bundle<B: Backend>(
+    pub fn load_bundle(
         &self,
         cache: &PretrainedCache,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Arc<WhisperBundle<B>>> {
         Ok(self.load::<B>(cache, device)?.handle)
     }

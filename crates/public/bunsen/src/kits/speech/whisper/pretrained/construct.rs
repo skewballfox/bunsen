@@ -20,7 +20,6 @@
 
 use std::sync::Arc;
 
-use burn::prelude::Backend;
 
 #[cfg(feature = "store_safetensors")]
 use crate::data::pretrained::SafetensorsCheckpoint;
@@ -137,13 +136,13 @@ impl WhisperReader {
     ///
     /// # Errors
     /// As [`scan_cfg`](Self::scan_cfg); the scanner's.
-    pub fn load<B: Backend>(
+    pub fn load(
         &self,
         loaded: &LoadedResources,
-        device: &B::Device,
-    ) -> BunsenResult<(Whisper<B>, WhisperApiConfig)> {
+        device: &Device,
+    ) -> BunsenResult<(Whisper, WhisperApiConfig)> {
         match self {
-            Self::Pytorch(scanner) => scanner.load::<B, _>(loaded.expect(CHECKPOINT)?, device),
+            Self::Pytorch(scanner) => scanner.load::<_>(loaded.expect(CHECKPOINT)?, device),
             #[cfg(feature = "store_safetensors")]
             Self::Safetensors(scanner) => scanner.load::<B>(
                 &SafetensorsCheckpoint::from_loaded(loaded, CHECKPOINT)?,
@@ -265,7 +264,7 @@ impl WhisperConstruct {
 }
 
 impl Construct for WhisperConstruct {
-    type Built<B: Backend> = WhisperBundle<B>;
+    type Built = WhisperBundle<B>;
 
     const KIT: &'static str = WHISPER_KIT;
 
@@ -329,11 +328,11 @@ impl Construct for WhisperConstruct {
     /// Reads the checkpoint into a model at the precision it ships in, and
     /// the vocabulary, when there is one, into ranks the layout agrees
     /// with.
-    fn construct<B: Backend>(
+    fn construct(
         &self,
         _model: &PretrainedRef,
         loaded: &LoadedResources,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Arc<WhisperBundle<B>>> {
         let (model, cfg) = self.reader.load::<B>(loaded, device)?;
         let layout = cfg.token_layout.policy_for_vocab(cfg.vocab_size)?;

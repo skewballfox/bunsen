@@ -6,7 +6,6 @@ use burn::{
     config::Config,
     module::Module,
     prelude::{
-        Backend,
         Bool,
         ElementConversion,
         s,
@@ -58,22 +57,22 @@ impl LBMMeta for LBMD2Q9Config {
 
 impl LBMD2Q9Config {
     /// Initializes a [`LBMD2Q9State`] module.
-    pub fn init<B: Backend>(
+    pub fn init(
         self,
-        device: &B::Device,
+        device: &Device,
         rho: f64,
-    ) -> LBMD2Q9State<B> {
+    ) -> LBMD2Q9State {
         let height = self.shape.height;
         let width = self.shape.width;
 
-        let solid_mask = Tensor::<B, 2>::zeros([height, width], device).bool();
+        let solid_mask = Tensor::<2>::zeros([height, width], device).bool();
 
         let lbm_tables = LbmTables::init(device);
 
         // Start off in a relaxed state. The border ring is zero, and it must
         // be: nothing later writes it from outside, and the mass total covers
         // the whole grid.
-        let state = Tensor::<B, 4>::zeros([height, width, 3, 3], device).slice_assign(
+        let state = Tensor::<4>::zeros([height, width, 3, 3], device).slice_assign(
             s![1..-1, 1..-1],
             lbm_tables
                 .w()
@@ -81,12 +80,12 @@ impl LBMD2Q9Config {
                 .expand([height - 2, width - 2, 3, 3])
                 * rho,
         );
-        let total_mass = state.clone().sum().into_scalar().elem();
+        let total_mass = state.clone().sum().into_scalar();
 
         self.relaxation.validate();
 
         let omega =
-            Tensor::<B, 2>::ones([height, width], device) * self.relaxation.as_omega_value();
+            Tensor::<2>::ones([height, width], device) * self.relaxation.as_omega_value();
 
         LBMD2Q9State {
             shape: self.shape,
@@ -110,7 +109,7 @@ impl LBMD2Q9Config {
 ///
 /// Built by [`LBMD2Q9Config`].
 #[derive(Module, Debug)]
-pub struct LBMD2Q9State<B: Backend> {
+pub struct LBMD2Q9State {
     /// The grid shape.
     pub shape: GridShape2D,
 
@@ -123,33 +122,33 @@ pub struct LBMD2Q9State<B: Backend> {
     /// The grid velocity: `[H, W, UY=3, UX=3]`
     /// Here the 0-9 velocity terms are unfolded
     /// into the ``UY`` and ``UX`` dims.
-    pub dist: Tensor<B, 4>,
+    pub dist: Tensor<4>,
 
     /// The solid mask: `[H, W]`
-    pub solid_mask: Tensor<B, 2, Bool>,
+    pub solid_mask: Tensor<2, Bool>,
 
     /// The relaxation field.
-    pub omega: Tensor<B, 2>,
+    pub omega: Tensor<2>,
 
     /// Space Constants
-    pub lbm_tables: LbmTables<B>,
+    pub lbm_tables: LbmTables,
 }
 
-impl<B: Backend> LBMMeta for LBMD2Q9State<B> {
+impl LBMMeta for LBMD2Q9State {
     fn shape(&self) -> GridShape2D {
         self.shape
     }
 }
 
-impl<B: Backend> HasDType for LBMD2Q9State<B> {
+impl HasDType for LBMD2Q9State {
     fn dtype(&self) -> DType {
         self.dist.dtype()
     }
 }
 
-impl<B: Backend> LBMD2Q9State<B> {
+impl LBMD2Q9State {
     /// Returns the device the module is on.
-    pub fn device(&self) -> B::Device {
+    pub fn device(&self) -> Device {
         self.dist.device()
     }
 
@@ -233,12 +232,12 @@ impl<B: Backend> LBMD2Q9State<B> {
 
         self.step_count += 1;
 
-        B::sync(&self.device()).unwrap();
+        self.device().sync().unwrap();
     }
 
     /// Returns the current mass of the simm.
     pub fn current_total_mass(&self) -> f64 {
-        self.dist.clone().sum().into_scalar().elem()
+        self.dist.clone().sum().into_scalar()
     }
 
     /// Saves the total energy of the system.
@@ -267,7 +266,7 @@ mod tests {
     const RHO: f64 = SPEED_OF_SOUND / 100.0;
 
     /// A 16 x 24 world at rest density `RHO`.
-    fn small_world<B: Backend>(device: &B::Device) -> LBMD2Q9State<B> {
+    fn small_world(device: &Device) -> LBMD2Q9State {
         LBMD2Q9Config::new(GridShape2D {
             width: 24,
             height: 16,
@@ -281,7 +280,7 @@ mod tests {
     fn test_init_fills_the_interior_only() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let world = small_world::<B>(&device);
 
@@ -295,7 +294,7 @@ mod tests {
             world.dist.clone().slice(s![.., 0]),
             world.dist.clone().slice(s![.., -1]),
         ] {
-            let total: f64 = ring.abs().sum().into_scalar().elem();
+            let total: f64 = ring.abs().sum().into_scalar();
             assert_eq!(total, 0.0);
         }
 
@@ -315,7 +314,7 @@ mod tests {
     fn test_advance_step_conserves_mass_and_stays_finite() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let mut world = small_world::<B>(&device);
 
@@ -331,7 +330,7 @@ mod tests {
         assert_eq!(world.step_count(), 20);
 
         // Every population is finite.
-        let all_finite: bool = world.dist.clone().is_finite().all().into_scalar().elem();
+        let all_finite: bool = world.dist.clone().is_finite().all().into_scalar();
         assert!(all_finite, "the distribution went non-finite");
 
         // Mass is conserved to float precision, so the correction stays ~1.
@@ -345,9 +344,7 @@ mod tests {
         // The bump has spread: momentum is nonzero somewhere.
         let max_momentum: f64 = macroscopic_momentum(world.dist.clone(), world.lbm_tables.e_vec())
             .abs()
-            .max()
-            .into_scalar()
-            .elem();
+            .max().into_scalar();
         assert!(max_momentum > 0.0);
     }
 
@@ -357,7 +354,7 @@ mod tests {
     fn test_correction_term_rejects_a_degenerate_mass() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let mut world = small_world::<B>(&device);
 

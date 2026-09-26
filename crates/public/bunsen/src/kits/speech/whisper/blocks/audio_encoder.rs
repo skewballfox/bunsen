@@ -13,7 +13,6 @@ use burn::{
         conv::Conv1dConfig,
     },
     prelude::{
-        Backend,
         s,
     },
     tensor::{
@@ -120,11 +119,11 @@ impl AudioEncoderMeta for AudioEncoderConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, AudioEncoder<B>> for AudioEncoderConfig {
+impl ModuleInit<AudioEncoder> for AudioEncoderConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<AudioEncoder<B>> {
+        device: &Device,
+    ) -> BunsenResult<AudioEncoder> {
         let pos_ctx = self.max_context / AUDIO_ENCODER_STRIDE;
 
         Ok(AudioEncoder {
@@ -154,7 +153,7 @@ impl<B: Backend> ModuleInit<B, AudioEncoder<B>> for AudioEncoderConfig {
                         .with_d_head(self.d_head)
                         .try_init(device)
                 })
-                .collect::<BunsenResult<Vec<ResidualEncoderAttentionBlock<B>>>>()?,
+                .collect::<BunsenResult<Vec<ResidualEncoderAttentionBlock>>>()?,
 
             ln_post: LayerNormConfig::new(self.d_model).init(device),
         })
@@ -167,22 +166,22 @@ impl<B: Backend> ModuleInit<B, AudioEncoder<B>> for AudioEncoderConfig {
 ///
 /// Built by [`AudioEncoderConfig`].
 #[derive(Module, Debug)]
-pub struct AudioEncoder<B: Backend> {
+pub struct AudioEncoder {
     /// The head conv stack; a stride-2 down-sampling sequence of
     /// [`ConvBlock1d`](crate::blocks::conv::ConvBlock1d) modules.
-    pub head: ConvSeq1d<B>,
+    pub head: ConvSeq1d,
 
     /// The positional embedding.
-    pub positional_embedding: Param<Tensor<B, 2>>,
+    pub positional_embedding: Param<Tensor<2>>,
 
     /// The audio encoder blocks.
-    pub blocks: Vec<ResidualEncoderAttentionBlock<B>>,
+    pub blocks: Vec<ResidualEncoderAttentionBlock>,
 
     /// The final `LayerNorm`.
-    pub ln_post: LayerNorm<B>,
+    pub ln_post: LayerNorm,
 }
 
-impl<B: Backend> FixPytorchLoadMappers for AudioEncoder<B> {
+impl FixPytorchLoadMappers for AudioEncoder {
     /// Only the attention blocks are affected: the head's conv weights are
     /// rank-3, and the positional embedding and the final layer norm are
     /// stored contiguously.
@@ -192,7 +191,7 @@ impl<B: Backend> FixPytorchLoadMappers for AudioEncoder<B> {
     }
 }
 
-impl<B: Backend> AudioEncoderMeta for AudioEncoder<B> {
+impl AudioEncoderMeta for AudioEncoder {
     fn n_mels(&self) -> usize {
         self.head.in_channels()
     }
@@ -217,13 +216,13 @@ impl<B: Backend> AudioEncoderMeta for AudioEncoder<B> {
     }
 }
 
-impl<B: Backend> HasDType for AudioEncoder<B> {
+impl HasDType for AudioEncoder {
     fn dtype(&self) -> DType {
         self.positional_embedding.dtype()
     }
 }
 
-impl<B: Backend> AudioEncoder<B> {
+impl AudioEncoder {
     /// Forward pass through the audio encoder.
     ///
     /// # Arguments
@@ -242,8 +241,8 @@ impl<B: Backend> AudioEncoder<B> {
     /// model's.
     pub fn forward(
         &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        x: Tensor<3>,
+    ) -> Tensor<3> {
         let x = self.forward_head(x);
 
         let mut x = self.embed(x);
@@ -269,8 +268,8 @@ impl<B: Backend> AudioEncoder<B> {
     /// `[batch, seq, d_model]`.
     pub fn forward_head(
         &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        x: Tensor<3>,
+    ) -> Tensor<3> {
         let x = x.cast(self.dtype());
 
         #[cfg(any(debug_assertions, test))]
@@ -316,8 +315,8 @@ impl<B: Backend> AudioEncoder<B> {
     /// `[batch, seq, d_model]`.
     pub fn embed(
         &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        x: Tensor<3>,
+    ) -> Tensor<3> {
         let k = x.dims()[1];
         x + self
             .positional_embedding
@@ -346,7 +345,7 @@ mod tests {
     fn test_audio_encoder_forward() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let d_model = 128;
         let n_mels = 256;
@@ -363,7 +362,7 @@ mod tests {
         assert_eq!(config.n_heads(), n_audio_heads);
         assert_eq!(config.n_layers(), n_audio_layers);
 
-        let encoder: AudioEncoder<B> = config.init(&device);
+        let encoder: AudioEncoder = config.init(&device);
 
         assert_eq!(encoder.n_mels(), n_mels);
         assert_eq!(encoder.d_model(), d_model);
@@ -373,7 +372,7 @@ mod tests {
 
         let batch = 2;
         let k = max_audio_ctx / 2;
-        let x: Tensor<B, 3> = Tensor::random([batch, n_mels, k], Default::default(), &device);
+        let x: Tensor<3> = Tensor::random([batch, n_mels, k], Default::default(), &device);
 
         let output = encoder.forward(x.clone());
 

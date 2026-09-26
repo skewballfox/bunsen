@@ -1,9 +1,10 @@
+/* TODO(burn 0.22 migration): burn::tensor::backend was removed, and burn::tensor::Device does not implement DeviceOps. Use &Device. See BREAKING_CHANGES.md #27, #35. */
 use burn::{
-    prelude::Backend,
     tensor::backend::DeviceOps,
 };
 
 /// Selected burn backend for fast-setup tests.
+/* TODO(burn 0.22 migration): a backend type alias is a Device constructor, for example Device::flex() or Device::cuda(0). Replace each B: Backend parameter that uses this alias with a &Device argument. See BREAKING_CHANGES.md #27. */
 pub type CpuBackend = ::burn::backend::Flex;
 
 cfg_select! {

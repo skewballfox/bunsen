@@ -24,7 +24,6 @@ use bunsen::{
         testing::backend_device,
     },
 };
-use burn::prelude::Backend;
 use clap::Parser;
 use clap_common::logging::LogArgs;
 use indicatif::ProgressBar;
@@ -64,7 +63,7 @@ pub struct BenchmarkCmd {
 }
 
 impl BenchmarkCmd {
-    pub fn run<B: Backend>(&self) -> BunsenResult<()> {
+    pub fn run(&self) -> BunsenResult<()> {
         let device = backend_device::<B>();
         self.logging.init(None);
 
@@ -75,13 +74,13 @@ impl BenchmarkCmd {
         }
     }
 
-    fn run2d<B: Backend>(
+    fn run2d(
         &self,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<()> {
         eprintln!("2D Shape: {:?}", self.grid_shape.as_width_height());
 
-        let mut sim: ConwayLife2DState<B> = ConwayLife2DConfig {
+        let mut sim: ConwayLife2DState = ConwayLife2DConfig {
             shape: self.grid_shape,
         }
         .init(device);
@@ -92,16 +91,16 @@ impl BenchmarkCmd {
         Ok(())
     }
 
-    fn run3d<B: Backend>(
+    fn run3d(
         &self,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<()> {
         let depth = self.grid_shape.height;
 
         let shape3d: [usize; 3] = [self.grid_shape.width, self.grid_shape.height, depth];
         eprintln!("3D Shape: {:?}", shape3d);
 
-        let mut sim: ConwayLife3DState<B> = ConwayLife3DConfig {
+        let mut sim: ConwayLife3DState = ConwayLife3DConfig {
             shape: shape3d,
             rules: ConwayRules::default(),
         }

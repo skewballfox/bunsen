@@ -2,7 +2,6 @@ use bunsen::{
     errors::*,
     support::testing::PerformanceBackend,
 };
-use burn::prelude::Backend;
 use clap::Parser;
 
 pub mod commands;
@@ -34,7 +33,7 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run<B: Backend>(&self) -> BunsenResult<()> {
+    pub fn run(&self) -> BunsenResult<()> {
         match self {
             Commands::Transcribe(cmd) => cmd.run::<B>(),
             Commands::Live(cmd) => cmd.run::<B>(),

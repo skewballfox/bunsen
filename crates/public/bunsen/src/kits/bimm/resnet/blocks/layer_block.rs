@@ -25,7 +25,6 @@ use burn::{
         norm::NormalizationConfig,
     },
     prelude::{
-        Backend,
         Module,
         Tensor,
     },
@@ -141,11 +140,11 @@ impl LayerBlockContractConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, LayerBlock<B>> for LayerBlockContractConfig {
+impl ModuleInit<LayerBlock> for LayerBlockContractConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<LayerBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<LayerBlock> {
         self.to_structure().try_init(device)
     }
 }
@@ -307,11 +306,11 @@ impl LayerBlockStructureConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, LayerBlock<B>> for LayerBlockStructureConfig {
+impl ModuleInit<LayerBlock> for LayerBlockStructureConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<LayerBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<LayerBlock> {
         self.try_validate()?;
 
         Ok(LayerBlock {
@@ -319,7 +318,7 @@ impl<B: Backend> ModuleInit<B, LayerBlock<B>> for LayerBlockStructureConfig {
                 .blocks
                 .iter()
                 .map(|block| block.try_init(device))
-                .collect::<BunsenResult<Vec<ResidualBlock<B>>>>()?,
+                .collect::<BunsenResult<Vec<ResidualBlock>>>()?,
         })
     }
 }
@@ -336,12 +335,12 @@ impl<B: Backend> ModuleInit<B, LayerBlock<B>> for LayerBlockStructureConfig {
 /// Built by [`LayerBlockContractConfig`] (high-level) or
 /// [`LayerBlockStructureConfig`].
 #[derive(Module, Debug)]
-pub struct LayerBlock<B: Backend> {
+pub struct LayerBlock {
     /// Internal blocks.
-    pub blocks: Vec<ResidualBlock<B>>,
+    pub blocks: Vec<ResidualBlock>,
 }
 
-impl<B: Backend> LayerBlockMeta for LayerBlock<B> {
+impl LayerBlockMeta for LayerBlock {
     fn len(&self) -> usize {
         self.blocks.len()
     }
@@ -361,7 +360,7 @@ impl<B: Backend> LayerBlockMeta for LayerBlock<B> {
     }
 }
 
-impl<B: Backend> LayerBlock<B> {
+impl LayerBlock {
     /// Debug print.
     pub fn debug_print(&self) {
         println!("## LayerBlock: len={}", self.len());
@@ -375,8 +374,8 @@ impl<B: Backend> LayerBlock<B> {
     /// Applies the layer block.
     pub fn forward(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+        input: Tensor<4>,
+    ) -> Tensor<4> {
         #[cfg(debug_assertions)]
         use crate::contracts::*;
 
@@ -419,7 +418,7 @@ impl<B: Backend> LayerBlock<B> {
         f: &mut F,
     ) -> Self
     where
-        F: FnMut(usize, ResidualBlock<B>) -> ResidualBlock<B>,
+        F: FnMut(usize, ResidualBlock) -> ResidualBlock,
     {
         Self {
             blocks: self
@@ -459,8 +458,7 @@ mod tests {
 
     use burn::tensor::{
         Tolerance,
-        backend::BackendTypes,
-    };
+        };
     use serial_test::serial;
 
     use super::*;
@@ -508,9 +506,9 @@ mod tests {
     #[serial]
     pub fn test_layer_block() {
         type B = PerformanceBackend;
-        type F = <B as BackendTypes>::FloatElem;
+        type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let a_planes = 16;
         let b_planes = 32;
@@ -535,7 +533,7 @@ mod tests {
         assert_eq!(config.stride(), 2);
         assert_eq!(config.output_resolution([20, 16]), [10, 8]);
 
-        let block: LayerBlock<B> = config.init(&device);
+        let block: LayerBlock = config.init(&device);
 
         assert_eq!(block.in_planes(), a_planes);
         assert_eq!(block.out_planes(), c_planes);

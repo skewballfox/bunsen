@@ -76,12 +76,10 @@ use burn::{
     },
     optim::AdamWConfig,
     prelude::{
-        Backend,
         Int,
         Module,
         Tensor,
     },
-    record::CompactRecorder,
     tensor::backend::AutodiffBackend,
     train::{
         ClassificationOutput,
@@ -208,7 +206,7 @@ fn main() -> anyhow::Result<()> {
             type B = burn::backend::Flex;
         }
     }
-    backend_main::<Autodiff<B>>(&args)
+    backend_main::</* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<B>>(&args)
 }
 
 /// Create the artifact directory for saving training artifacts.
@@ -220,7 +218,7 @@ fn create_artifact_dir(artifact_dir: &str) {
 
 /// Train the model with the given configuration and devices.
 pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
-    let device: B::Device = Default::default();
+    let device: Device = Default::default();
 
     let image_shape = ImageShape {
         height: 32,
@@ -228,14 +226,14 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     };
     let num_classes = 10;
 
-    B::seed(&device, args.seed);
+    device.seed(args.seed);
 
     let prefab = PREFAB_RESNET_MAP.expect_lookup_prefab(&args.resnet_prefab);
 
     let contract = prefab.to_config().with_activation(ActivationConfig::Gelu);
-    let resnet: ResNet<B> = contract.to_structure().try_init(&device)?;
+    let resnet: ResNet = contract.to_structure().try_init(&device)?;
 
-    let resnet: ResNet<B> = match &args.resnet_pretrained {
+    let resnet: ResNet = match &args.resnet_pretrained {
         Some(pretrained) => {
             let old_float_type = resnet.output_fc.weight.dtype();
 
@@ -255,7 +253,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     .with_stochastic_drop_block(args.drop_block_prob)
     .with_stochastic_path_depth(args.drop_path_prob);
 
-    let model: Model<B> = Model { resnet };
+    let model: Model = Model { resnet };
 
     let optim_config = AdamWConfig::new()
         .with_weight_decay(5e-4)
@@ -324,7 +322,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
                 firehose_env.clone(),
             )?),
             Arc::new(InputAdapter::new(schema.clone())),
-            Arc::new(OutputAdapter::<B>::default()),
+            Arc::new(OutputAdapter::default()),
         );
 
         let mut builder = DataLoaderBuilder::new(batcher)
@@ -357,7 +355,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
             )?),
             Arc::new(InputAdapter::new(schema.clone())),
             // Use the InnerBackend for validation.
-            Arc::new(OutputAdapter::<B::InnerBackend>::default()),
+            Arc::new(OutputAdapter::</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>::default()),
         );
 
         let mut builder = DataLoaderBuilder::new(batcher).batch_size(args.batch_size);
@@ -392,8 +390,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         LossMetric::new(),
         // CudaMetric::new(), ??
         LearningRateMetric::new(),
-    ))
-    .with_file_checkpointer(CompactRecorder::new())
+    )).with_default_checkpointers()
     .early_stopping(MetricEarlyStoppingStrategy::new(
         &LossMetric::<B>::new(),
         Aggregate::Mean,
@@ -409,8 +406,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     let result = training.launch(Learner::new(model, optim_config.init(), lr_scheduler));
 
     result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .model.save_file(format!("{artifact_dir}/model"))
         .expect("Trained model should be saved successfully");
 
     Ok(())
@@ -438,14 +434,14 @@ impl ModelConfig {
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
-    pub resnet: ResNet<B>,
+    pub resnet: ResNet,
 }
 
-impl<B: Backend> Model<B> {
+impl<B: Backend> Model {
     pub fn forward_classification(
         &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 1, Int>,
+        images: Tensor<4>,
+        targets: Tensor<1, Int>,
     ) -> ClassificationOutput<B> {
         let output = self.resnet.forward(images);
 
@@ -459,8 +455,8 @@ impl<B: Backend> Model<B> {
     }
 }
 
-impl<B: AutodiffBackend> TrainStep for Model<B> {
-    type Input = (Tensor<B, 4>, Tensor<B, 1, Int>);
+impl<B: AutodiffBackend> TrainStep for Model {
+    type Input = (Tensor<4>, Tensor<1, Int>);
     type Output = ClassificationOutput<B>;
 
     fn step(
@@ -473,8 +469,8 @@ impl<B: AutodiffBackend> TrainStep for Model<B> {
     }
 }
 
-impl<B: Backend> InferenceStep for Model<B> {
-    type Input = (Tensor<B, 4>, Tensor<B, 1, Int>);
+impl<B: Backend> InferenceStep for Model {
+    type Input = (Tensor<4>, Tensor<1, Int>);
     type Output = ClassificationOutput<B>;
 
     fn step(
@@ -524,7 +520,7 @@ impl BatcherInputAdapter<(String, usize)> for InputAdapter {
 struct OutputAdapter<B: Backend> {
     phantom: std::marker::PhantomData<B>,
 }
-impl<B> Default for OutputAdapter<B>
+impl<B> Default for OutputAdapter
 where
     B: Backend,
 {
@@ -534,13 +530,13 @@ where
         }
     }
 }
-impl<B: Backend> BatcherOutputAdapter<B, (Tensor<B, 4>, Tensor<B, 1, Int>)> for OutputAdapter<B> {
+impl<B: Backend> BatcherOutputAdapter<(Tensor<4>, Tensor<1, Int>)> for OutputAdapter {
     fn apply(
         &self,
         batch: &FirehoseRowBatch,
-        device: &B::Device,
-    ) -> anyhow::Result<(Tensor<B, 4>, Tensor<B, 1, Int>)> {
-        let image_batch = Tensor::<B, 4>::from_data(
+        device: &Device,
+    ) -> anyhow::Result<(Tensor<4>, Tensor<1, Int>)> {
+        let image_batch = Tensor::<4>::from_data(
             stack_tensor_data_column(batch, DATA_COLUMN)
                 .expect("Failed to stack tensor data column"),
             device,

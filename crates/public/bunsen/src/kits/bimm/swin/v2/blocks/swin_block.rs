@@ -16,10 +16,9 @@ use burn::{
         },
     },
     prelude::{
-        Backend,
         Tensor,
     },
-    tensor::BasicOps,
+    tensor::kind::Basic,
 };
 
 use crate::{
@@ -104,11 +103,11 @@ impl BlockMlpMeta for BlockMlpConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, BlockMlp<B>> for BlockMlpConfig {
+impl ModuleInit<BlockMlp> for BlockMlpConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<BlockMlp<B>> {
+        device: &Device,
+    ) -> BunsenResult<BlockMlp> {
         let d_input = self.d_input();
         let d_hidden = self.d_hidden();
         let d_output = self.d_output();
@@ -129,12 +128,12 @@ impl<B: Backend> ModuleInit<B, BlockMlp<B>> for BlockMlpConfig {
 ///
 /// Built by [`BlockMlpConfig`].
 #[derive(Module, Debug)]
-pub struct BlockMlp<B: Backend> {
+pub struct BlockMlp {
     /// First linear layer.
-    fc1: Linear<B>,
+    fc1: Linear,
 
     /// Second linear layer.
-    fc2: Linear<B>,
+    fc2: Linear,
 
     /// Activation function.
     act: Activation<B>,
@@ -143,7 +142,7 @@ pub struct BlockMlp<B: Backend> {
     drop: Dropout,
 }
 
-impl<B: Backend> BlockMlpMeta for BlockMlp<B> {
+impl BlockMlpMeta for BlockMlp {
     fn d_input(&self) -> usize {
         self.fc1.weight.dims()[0]
     }
@@ -161,7 +160,7 @@ impl<B: Backend> BlockMlpMeta for BlockMlp<B> {
     }
 }
 
-impl<B: Backend> BlockMlp<B> {
+impl BlockMlp {
     /// Applies the MLP to the input tensor.
     ///
     /// # Arguments
@@ -174,8 +173,8 @@ impl<B: Backend> BlockMlp<B> {
     #[must_use]
     pub fn forward<const D: usize>(
         &self,
-        x: Tensor<B, D>,
-    ) -> Tensor<B, D> {
+        x: Tensor<D>,
+    ) -> Tensor<D> {
         assert_shape_contract_periodically!(
             [..., "in"],
             &x.dims(),
@@ -224,14 +223,14 @@ impl<B: Backend> BlockMlp<B> {
 /// cyclic shifting.
 #[must_use]
 #[inline(always)]
-fn with_shift<B: Backend, F, K>(
-    x: Tensor<B, 4, K>,
+fn with_shift<F, K>(
+    x: Tensor<4, K>,
     shift: isize,
     f: F,
-) -> Tensor<B, 4, K>
+) -> Tensor<4, K>
 where
-    K: BasicOps<B>,
-    F: FnOnce(Tensor<B, 4, K>) -> Tensor<B, 4, K>,
+    K: Basic,
+    F: FnOnce(Tensor<4, K>) -> Tensor<4, K>,
 {
     let dims = [1, 2];
 
@@ -445,13 +444,13 @@ impl ShiftedWindowTransformerBlockConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, ShiftedWindowTransformerBlock<B>>
+impl ModuleInit<ShiftedWindowTransformerBlock>
     for ShiftedWindowTransformerBlockConfig
 {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ShiftedWindowTransformerBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<ShiftedWindowTransformerBlock> {
         self.check();
 
         let hidden_dim = (self.d_input as f64 * self.mlp_ratio) as usize;
@@ -511,7 +510,7 @@ impl<B: Backend> ModuleInit<B, ShiftedWindowTransformerBlock<B>>
 ///
 /// Built by [`ShiftedWindowTransformerBlockConfig`].
 #[derive(Module, Debug)]
-pub struct ShiftedWindowTransformerBlock<B: Backend> {
+pub struct ShiftedWindowTransformerBlock {
     /// Input resolution of the block, as `[H, W]`.
     pub input_resolution: [usize; 2],
 
@@ -522,25 +521,25 @@ pub struct ShiftedWindowTransformerBlock<B: Backend> {
     pub shift_size: usize,
 
     /// Shift mask for shifted window attention.
-    pub shift_mask: Option<Tensor<B, 3>>,
+    pub shift_mask: Option<Tensor<3>>,
 
     /// Drop path for stochastic depth.
     pub drop_path: DropPath,
 
     /// Layer normalization 1.
-    pub norm1: LayerNorm<B>,
+    pub norm1: LayerNorm,
 
     /// Layer normalization 2.
-    pub norm2: LayerNorm<B>,
+    pub norm2: LayerNorm,
 
     /// Window attention block.
-    pub win_attn: WindowAttention<B>,
+    pub win_attn: WindowAttention,
 
     /// MLP block.
-    pub block_mlp: BlockMlp<B>,
+    pub block_mlp: BlockMlp,
 }
 
-impl<B: Backend> ShiftedWindowTransformerBlockMeta for ShiftedWindowTransformerBlock<B> {
+impl ShiftedWindowTransformerBlockMeta for ShiftedWindowTransformerBlock {
     fn d_input(&self) -> usize {
         self.win_attn.d_input()
     }
@@ -582,7 +581,7 @@ impl<B: Backend> ShiftedWindowTransformerBlockMeta for ShiftedWindowTransformerB
     }
 }
 
-impl<B: Backend> ShiftedWindowTransformerBlock<B> {
+impl ShiftedWindowTransformerBlock {
     /// Applies the forward pass on the input tensor.
     ///
     /// # Arguments
@@ -599,8 +598,8 @@ impl<B: Backend> ShiftedWindowTransformerBlock<B> {
     #[must_use]
     pub fn forward(
         &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        x: Tensor<3>,
+    ) -> Tensor<3> {
         let [h, w] = self.input_resolution;
         let env = [("height", h), ("width", w)];
 
@@ -633,11 +632,11 @@ impl<B: Backend> ShiftedWindowTransformerBlock<B> {
     #[inline(always)]
     fn with_skip<const D: usize, F>(
         &self,
-        x: Tensor<B, D>,
+        x: Tensor<D>,
         f: F,
-    ) -> Tensor<B, D>
+    ) -> Tensor<D>
     where
-        F: FnOnce(Tensor<B, D>) -> Tensor<B, D>,
+        F: FnOnce(Tensor<D>) -> Tensor<D>,
     {
         self.drop_path.with_skip(x, f)
     }
@@ -660,9 +659,9 @@ impl<B: Backend> ShiftedWindowTransformerBlock<B> {
     #[inline(always)]
     fn apply_window(
         &self,
-        x: Tensor<B, 4>,
+        x: Tensor<4>,
         c: usize,
-    ) -> Tensor<B, 4> {
+    ) -> Tensor<4> {
         let [h, w] = self.input_resolution;
         let ws = self.window_size as i32;
         let c = c as i32;
@@ -729,7 +728,7 @@ mod tests {
     fn test_mlp() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let a = 2;
         let b = 3;
@@ -743,7 +742,7 @@ mod tests {
             .with_d_output(Some(d_output))
             .with_drop(drop);
 
-        let mlp: BlockMlp<B> = config.try_init(&device).ok_or_panic();
+        let mlp: BlockMlp = config.try_init(&device).ok_or_panic();
 
         assert_eq!(mlp.d_input(), config.d_input());
         assert_eq!(mlp.d_hidden(), config.d_hidden());
@@ -763,16 +762,16 @@ mod tests {
     fn test_with_shift() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let b = 1;
         let h = 4;
         let w = 4;
         let c = 3;
 
         let distribution = Distribution::Uniform(0.0, 1.0);
-        let input = Tensor::<B, 4>::random([b, h, w, c], distribution, &device);
+        let input = Tensor::<4>::random([b, h, w, c], distribution, &device);
 
-        let idx: Tensor<B, 4> = Tensor::arange(0..input.shape().num_elements() as i64, &device)
+        let idx: Tensor<4> = Tensor::arange(0..input.shape().num_elements() as i64, &device)
             .reshape([b, h, w, c])
             .float();
 
@@ -800,7 +799,7 @@ mod tests {
     fn test_shifted_window_transformer_block_meta() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let d_input = 128;
         let num_heads = 4;
@@ -826,7 +825,7 @@ mod tests {
         assert_eq!(config.mlp_ratio(), 4.0);
         assert_eq!(config.drop_path_rate(), 0.0);
 
-        let block: ShiftedWindowTransformerBlock<B> = config.init(&device);
+        let block: ShiftedWindowTransformerBlock = config.init(&device);
 
         assert_eq!(block.d_input(), d_input);
         assert_eq!(block.input_resolution(), input_resolution);
@@ -859,7 +858,7 @@ mod tests {
 
         let config = ShiftedWindowTransformerBlockConfig::new(d_input, input_resolution, num_heads);
 
-        let _d: ShiftedWindowTransformerBlock<B> = config.init(&Default::default());
+        let _d: ShiftedWindowTransformerBlock = config.init(&Default::default());
     }
 
     #[should_panic(expected = "input_resolution must be divisible by window size")]
@@ -874,7 +873,7 @@ mod tests {
 
         let config = ShiftedWindowTransformerBlockConfig::new(d_input, input_resolution, num_heads);
 
-        let _d: ShiftedWindowTransformerBlock<B> = config.init(&Default::default());
+        let _d: ShiftedWindowTransformerBlock = config.init(&Default::default());
     }
 
     #[should_panic(expected = "d_input must be greater than zero")]
@@ -889,7 +888,7 @@ mod tests {
 
         let config = ShiftedWindowTransformerBlockConfig::new(d_input, input_resolution, num_heads);
 
-        let _d: ShiftedWindowTransformerBlock<B> = config.init(&Default::default());
+        let _d: ShiftedWindowTransformerBlock = config.init(&Default::default());
     }
 
     #[should_panic(expected = "num_heads must be greater than zero")]
@@ -904,7 +903,7 @@ mod tests {
 
         let config = ShiftedWindowTransformerBlockConfig::new(d_input, input_resolution, num_heads);
 
-        let _d: ShiftedWindowTransformerBlock<B> = config.init(&Default::default());
+        let _d: ShiftedWindowTransformerBlock = config.init(&Default::default());
     }
 
     #[should_panic(expected = "window_size must be greater than zero")]
@@ -921,7 +920,7 @@ mod tests {
         let config = ShiftedWindowTransformerBlockConfig::new(d_input, input_resolution, num_heads)
             .with_window_size(window_size);
 
-        let _d: ShiftedWindowTransformerBlock<B> = config.init(&Default::default());
+        let _d: ShiftedWindowTransformerBlock = config.init(&Default::default());
     }
 
     #[test]
@@ -943,11 +942,11 @@ mod tests {
             .with_window_size(window_size);
 
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let block: ShiftedWindowTransformerBlock<B> = config.init(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
+        let block: ShiftedWindowTransformerBlock = config.init(&device);
 
         let distribution = Distribution::Uniform(0.0, 1.0);
-        let input = Tensor::<B, 3>::random([b, h * w, d_input], distribution, &device);
+        let input = Tensor::<3>::random([b, h * w, d_input], distribution, &device);
 
         let output = block.forward(input.clone());
 

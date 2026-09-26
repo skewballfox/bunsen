@@ -2,10 +2,9 @@
 
 use burn::{
     prelude::{
-        Backend,
         Tensor,
     },
-    tensor::Numeric,
+    tensor::kind::Numeric,
 };
 
 /// Builds a filter of kernel midpoints.
@@ -26,13 +25,13 @@ use burn::{
 /// - `kernel`: the shape of the kernel.
 /// - `device`: the device to construct the mask on.
 #[inline]
-pub fn conv2d_kernel_midpoint_filter<B: Backend, K>(
+pub fn conv2d_kernel_midpoint_filter<K>(
     shape: [usize; 2],
     kernel: [usize; 2],
-    device: &B::Device,
-) -> Tensor<B, 2, K>
+    device: &Device,
+) -> Tensor<2, K>
 where
-    K: Numeric<B>,
+    K: Numeric,
 {
     // TODO: kernel <= shape
     // This is wrong:
@@ -63,7 +62,7 @@ mod tests {
         let shape = [7, 9];
         let kernel_shape = [2, 3];
 
-        let mask: Tensor<B, 2> = conv2d_kernel_midpoint_filter(shape, kernel_shape, &device);
+        let mask: Tensor<2> = conv2d_kernel_midpoint_filter(shape, kernel_shape, &device);
         mask.to_data().assert_eq(
             &TensorData::from([
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],

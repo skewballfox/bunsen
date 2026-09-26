@@ -71,11 +71,9 @@ use burn::{
     nn::loss::CrossEntropyLossConfig,
     optim::AdamWConfig,
     prelude::{
-        Backend,
         Int,
         Tensor,
     },
-    record::CompactRecorder,
     tensor::backend::AutodiffBackend,
     train::{
         ClassificationOutput,
@@ -199,7 +197,7 @@ fn main() -> anyhow::Result<()> {
             type B = burn::backend::Flex;
         }
     }
-    backend_main::<Autodiff<B>>(&args)
+    backend_main::</* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<B>>(&args)
 }
 
 /// Create the artifact directory for saving training artifacts.
@@ -211,7 +209,7 @@ fn create_artifact_dir(artifact_dir: &str) {
 
 /// Train the model with the given configuration and devices.
 pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
-    let device: B::Device = Default::default();
+    let device: Device = Default::default();
 
     let h: usize = 32;
     let w: usize = 32;
@@ -235,7 +233,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     .with_attn_drop_rate(0.2)
     .with_drop_rate(0.2);
 
-    B::seed(&device, args.seed);
+    device.seed(args.seed);
 
     let training_config = TrainingConfig::new(
         ModelConfig {
@@ -315,7 +313,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
                 firehose_env.clone(),
             )?),
             Arc::new(InputAdapter::new(schema.clone())),
-            Arc::new(OutputAdapter::<B>::default()),
+            Arc::new(OutputAdapter::default()),
         );
 
         let mut builder = DataLoaderBuilder::new(batcher).batch_size(args.batch_size);
@@ -346,7 +344,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
             )?),
             Arc::new(InputAdapter::new(schema.clone())),
             // Use the InnerBackend for validation.
-            Arc::new(OutputAdapter::<B::InnerBackend>::default()),
+            Arc::new(OutputAdapter::</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>::default()),
         );
 
         let mut builder = DataLoaderBuilder::new(batcher).batch_size(args.batch_size);
@@ -380,8 +378,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         LossMetric::new(),
         // CudaMetric::new(), ??
         LearningRateMetric::new(),
-    ))
-    .with_file_checkpointer(CompactRecorder::new())
+    )).with_default_checkpointers()
     .early_stopping(MetricEarlyStoppingStrategy::new(
         &LossMetric::<B>::new(),
         Aggregate::Mean,
@@ -402,8 +399,7 @@ pub fn backend_main<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     ));
 
     result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .model.save_file(format!("{artifact_dir}/model"))
         .expect("Trained model should be saved successfully");
 
     Ok(())
@@ -415,11 +411,11 @@ pub struct ModelConfig {
     pub swin: SwinTransformerV2Config,
 }
 
-impl<B: Backend> ModuleInit<B, Model<B>> for ModelConfig {
+impl<B: Backend> ModuleInit<Model> for ModelConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<Model<B>> {
+        device: &Device,
+    ) -> BunsenResult<Model> {
         Ok(Model {
             drop_block: self.drop_block.init(),
             swin: self.swin.try_init(device).ok_or_panic(),
@@ -430,14 +426,14 @@ impl<B: Backend> ModuleInit<B, Model<B>> for ModelConfig {
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
     pub drop_block: DropBlock2d,
-    pub swin: SwinTransformerV2<B>,
+    pub swin: SwinTransformerV2,
 }
 
-impl<B: Backend> Model<B> {
+impl<B: Backend> Model {
     pub fn forward_classification(
         &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 1, Int>,
+        images: Tensor<4>,
+        targets: Tensor<1, Int>,
     ) -> ClassificationOutput<B> {
         let images = self.drop_block.forward(images);
         let output = self.swin.forward(images);
@@ -451,8 +447,8 @@ impl<B: Backend> Model<B> {
     }
 }
 
-impl<B: AutodiffBackend> TrainStep for Model<B> {
-    type Input = (Tensor<B, 4>, Tensor<B, 1, Int>);
+impl<B: AutodiffBackend> TrainStep for Model {
+    type Input = (Tensor<4>, Tensor<1, Int>);
     type Output = ClassificationOutput<B>;
 
     fn step(
@@ -465,8 +461,8 @@ impl<B: AutodiffBackend> TrainStep for Model<B> {
     }
 }
 
-impl<B: Backend> InferenceStep for Model<B> {
-    type Input = (Tensor<B, 4>, Tensor<B, 1, Int>);
+impl<B: Backend> InferenceStep for Model {
+    type Input = (Tensor<4>, Tensor<1, Int>);
     type Output = ClassificationOutput<B>;
 
     fn step(
@@ -516,7 +512,7 @@ impl BatcherInputAdapter<(String, usize)> for InputAdapter {
 struct OutputAdapter<B: Backend> {
     phantom: std::marker::PhantomData<B>,
 }
-impl<B> Default for OutputAdapter<B>
+impl<B> Default for OutputAdapter
 where
     B: Backend,
 {
@@ -526,13 +522,13 @@ where
         }
     }
 }
-impl<B: Backend> BatcherOutputAdapter<B, (Tensor<B, 4>, Tensor<B, 1, Int>)> for OutputAdapter<B> {
+impl<B: Backend> BatcherOutputAdapter<(Tensor<4>, Tensor<1, Int>)> for OutputAdapter {
     fn apply(
         &self,
         batch: &FirehoseRowBatch,
-        device: &B::Device,
-    ) -> anyhow::Result<(Tensor<B, 4>, Tensor<B, 1, Int>)> {
-        let image_batch = Tensor::<B, 4>::from_data(
+        device: &Device,
+    ) -> anyhow::Result<(Tensor<4>, Tensor<1, Int>)> {
+        let image_batch = Tensor::<4>::from_data(
             stack_tensor_data_column(batch, DATA_COLUMN)
                 .expect("Failed to stack tensor data column"),
             device,

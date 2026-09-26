@@ -12,8 +12,7 @@
 use burn::{
     Tensor,
     config::Config,
-    prelude::Backend,
-};
+    };
 
 use crate::{
     burner::module::ModuleInit,
@@ -105,11 +104,11 @@ impl WhisperFrontEndConfig {
     /// # Errors
     /// See [`validate`](PerceptiveAudioConverterOptions::validate) and
     /// [`to_vec_filterbank`](PerceptiveAudioConverterOptions::try_to_filterbank_vec).
-    pub fn try_init_audio_converter<B: Backend>(
+    pub fn try_init_audio_converter(
         &self,
         n_mels: usize,
-        device: &B::Device,
-    ) -> BunsenResult<PerceptiveAudioConverter<B>> {
+        device: &Device,
+    ) -> BunsenResult<PerceptiveAudioConverter> {
         self.mel_converter_options(n_mels)?.try_init(device)
     }
 
@@ -154,11 +153,11 @@ impl WhisperFrontEndConfig {
     ///
     /// # Returns
     /// `[batch, n_mels, frames]`.
-    pub fn package_window<B: Backend>(
+    pub fn package_window(
         &self,
-        window: Tensor<B, 3>,
-        reference: Tensor<B, 1>,
-    ) -> Tensor<B, 3> {
+        window: Tensor<3>,
+        reference: Tensor<1>,
+    ) -> Tensor<3> {
         let [batch, _, _] = window.dims();
         assert_eq!(reference.dims(), [batch], "one reference per batch row");
 
@@ -203,10 +202,10 @@ impl WhisperFrontEndConfig {
     /// If `frames` is less than 2. One frame leaves nothing after the
     /// trailing frame is dropped, and the clamp has no maximum to reduce
     /// over.
-    pub fn package_mels<B: Backend>(
+    pub fn package_mels(
         &self,
-        joined: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        joined: Tensor<3>,
+    ) -> Tensor<3> {
         let window = drop_last_frame(joined);
         let reference = PerWindow.reference(window.clone());
         self.package_window(window, reference)
@@ -278,14 +277,14 @@ mod tests {
         WhisperFrontEndConfig::new()
     }
 
-    fn package_mels(joined: Tensor<B, 3>) -> Tensor<B, 3> {
+    fn package_mels(joined: Tensor<3>) -> Tensor<3> {
         front_end().package_mels(joined)
     }
 
     fn package_window(
-        window: Tensor<B, 3>,
-        reference: Tensor<B, 1>,
-    ) -> Tensor<B, 3> {
+        window: Tensor<3>,
+        reference: Tensor<1>,
+    ) -> Tensor<3> {
         front_end().package_window(window, reference)
     }
 
@@ -356,9 +355,9 @@ mod tests {
     #[test]
     fn test_package_window_uses_the_configured_range() {
         let device = default_device();
-        let window: Tensor<B, 3> =
+        let window: Tensor<3> =
             Tensor::from_data(TensorData::new(vec![0.0_f64, -20.0], [1, 2, 1]), &device);
-        let reference: Tensor<B, 1> =
+        let reference: Tensor<1> =
             Tensor::from_data(TensorData::new(vec![0.0_f64], [1]), &device);
 
         // A 4 dB range floors -20 at -4: affine `(v + 4) / 4` gives 0.
@@ -381,7 +380,7 @@ mod tests {
         for batch in 1..4 {
             for n_mels in 1..5 {
                 for frames in 2..12 {
-                    let joined: Tensor<B, 3> = Tensor::zeros([batch, frames, n_mels], &device);
+                    let joined: Tensor<3> = Tensor::zeros([batch, frames, n_mels], &device);
 
                     assert_eq!(
                         package_mels(joined).dims(),
@@ -411,7 +410,7 @@ mod tests {
                 *slot = 99.0;
             }
 
-            let joined: Tensor<B, 3> =
+            let joined: Tensor<3> =
                 Tensor::from_data(TensorData::new(data, [1, frames, n_mels]), &device);
 
             assert_tensor_close_to_vec(
@@ -428,7 +427,7 @@ mod tests {
     #[should_panic(expected = "at least 2 frames")]
     fn test_package_mels_rejects_a_single_frame() {
         let device = default_device();
-        let joined: Tensor<B, 3> = Tensor::zeros([1, 1, 4], &device);
+        let joined: Tensor<3> = Tensor::zeros([1, 1, 4], &device);
 
         let _ = package_mels(joined);
     }
@@ -438,7 +437,7 @@ mod tests {
     #[should_panic(expected = "at least 2 frames")]
     fn test_package_mels_rejects_zero_frames() {
         let device = default_device();
-        let joined: Tensor<B, 3> = Tensor::zeros([1, 0, 4], &device);
+        let joined: Tensor<3> = Tensor::zeros([1, 0, 4], &device);
 
         let _ = package_mels(joined);
     }
@@ -452,7 +451,7 @@ mod tests {
 
         // One row, one mel, three frames. The last is an outlier that would
         // dominate the maximum if it survived to the clamp.
-        let joined: Tensor<B, 3> = Tensor::from_data(
+        let joined: Tensor<3> = Tensor::from_data(
             TensorData::new(vec![0.0_f64, -20.0, 99.0], [1, 3, 1]),
             &device,
         );
@@ -477,7 +476,7 @@ mod tests {
         let data: Vec<f64> = (0..batch * frames * n_mels)
             .map(|k| ((k * 37) % 23) as f64 - 15.0 + (k / (frames * n_mels)) as f64 * 3.0)
             .collect();
-        let joined: Tensor<B, 3> =
+        let joined: Tensor<3> =
             Tensor::from_data(TensorData::new(data, [batch, frames, n_mels]), &device);
 
         let whole = package_mels(joined.clone());
@@ -496,7 +495,7 @@ mod tests {
         let device = default_device();
 
         // Two rows, two frames, one mel: `[0, -20]` in each row.
-        let window: Tensor<B, 3> = Tensor::from_data(
+        let window: Tensor<3> = Tensor::from_data(
             TensorData::new(vec![0.0_f64, -20.0, 0.0, -20.0], [2, 2, 1]),
             &device,
         );
@@ -504,7 +503,7 @@ mod tests {
         // Row 0 against its own maximum (0): floor -8. Row 1 against a
         // reference of 12, as if something louder had been heard: floor 4,
         // which lifts both of its values.
-        let reference: Tensor<B, 1> =
+        let reference: Tensor<1> =
             Tensor::from_data(TensorData::new(vec![0.0_f64, 12.0], [2]), &device);
 
         assert_tensor_close_to_vec(
@@ -519,9 +518,9 @@ mod tests {
     #[test]
     fn test_package_window_never_clips_above_the_floor() {
         let device = default_device();
-        let window: Tensor<B, 3> =
+        let window: Tensor<3> =
             Tensor::from_data(TensorData::new(vec![4.0_f64, 0.0], [1, 2, 1]), &device);
-        let reference: Tensor<B, 1> =
+        let reference: Tensor<1> =
             Tensor::from_data(TensorData::new(vec![0.0_f64], [1]), &device);
 
         // Floor at -8; nothing is below it, so it is the affine alone.

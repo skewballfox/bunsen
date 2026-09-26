@@ -2,7 +2,6 @@
 
 use burn::{
     prelude::{
-        Backend,
         Tensor,
     },
     tensor::TensorCreationOptions,
@@ -73,12 +72,12 @@ pub fn vec_linspace(
 ///
 /// # Returns
 /// `[num]` sized tensor.
-pub fn tensor_arange_start_step<B: Backend>(
+pub fn tensor_arange_start_step(
     num: usize,
     start: f64,
     step: Option<f64>,
     options: impl Into<TensorCreationOptions<B>>,
-) -> Tensor<B, 1> {
+) -> Tensor<1> {
     let x = Tensor::arange(0..num as i64, options).float();
 
     let x = match step {
@@ -105,12 +104,12 @@ pub fn tensor_arange_start_step<B: Backend>(
 /// # Returns
 ///
 /// A 1D tensor containing the generated floating point values.
-pub fn tensor_linspace<B: Backend>(
+pub fn tensor_linspace(
     start: f64,
     end: f64,
     num: usize,
     options: impl Into<TensorCreationOptions<B>>,
-) -> Tensor<B, 1> {
+) -> Tensor<1> {
     assert!(num > 0, "Number of points must be positive");
 
     if num == 1 {
@@ -129,8 +128,7 @@ mod tests {
         prelude::TensorData,
         tensor::{
             Tolerance,
-            backend::BackendTypes,
-        },
+            },
     };
 
     use super::*;
@@ -143,7 +141,7 @@ mod tests {
         },
     };
     type B = CpuBackend;
-    type F = <B as BackendTypes>::FloatElem;
+    type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
     #[test]
     fn test_arange_start_step() {

@@ -5,10 +5,9 @@ use alloc::vec::Vec;
 use burn::{
     Tensor,
     prelude::{
-        Backend,
         Shape,
     },
-    tensor::BasicOps,
+    tensor::kind::Basic,
 };
 
 /// Adaptor to view sources as a `&[usize]`.
@@ -116,12 +115,10 @@ impl<'a> From<Shape> for ShapeView<'a> {
     }
 }
 
-impl<'a, B, const R: usize, K> From<&'a Tensor<B, R, K>> for ShapeView<'a>
-where
-    B: Backend,
-    K: BasicOps<B>,
+impl<'a, B, const R: usize, K> From<&'a Tensor<R, K>> for ShapeView<'a>
+where K: Basic,
 {
-    fn from(tensor: &'a Tensor<B, R, K>) -> Self {
+    fn from(tensor: &'a Tensor<R, K>) -> Self {
         tensor.shape().into()
     }
 }
@@ -215,7 +212,7 @@ mod tests {
         let sv: ShapeView = shape_ref.into();
         assert_eq!(shape_ref.as_ref(), &expected);
 
-        let tensor: Tensor<B, 2> = Tensor::zeros([2, 2], &Default::default());
+        let tensor: Tensor<2> = Tensor::zeros([2, 2], &Default::default());
         let tensor_ref = &tensor;
         let sv: ShapeView = tensor_ref.into();
         assert_eq!(sv.as_ref(), &[2, 2]);

@@ -16,7 +16,6 @@ use burn::{
         },
     },
     prelude::{
-        Backend,
         Config,
         Int,
     },
@@ -161,10 +160,10 @@ impl NanoChatGptMeta for NanoChatGptConfig {
 
 impl NanoChatGptConfig {
     /// Initializes a [`NanoChatGpt`].
-    pub fn init<B: Backend>(
+    pub fn init(
         self,
-        device: &B::Device,
-    ) -> NanoChatGpt<B> {
+        device: &Device,
+    ) -> NanoChatGpt {
         self.into_structure().init(device)
     }
 
@@ -261,11 +260,11 @@ impl NanoChatGptMeta for NanoChatGptStructureConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, NanoChatGpt<B>> for NanoChatGptStructureConfig {
+impl ModuleInit<NanoChatGpt> for NanoChatGptStructureConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<NanoChatGpt<B>> {
+        device: &Device,
+    ) -> BunsenResult<NanoChatGpt> {
         let n_embed = self.n_embed();
         Ok(NanoChatGpt {
             wte: self.wte.init(device),
@@ -274,7 +273,7 @@ impl<B: Backend> ModuleInit<B, NanoChatGpt<B>> for NanoChatGptStructureConfig {
                 .iter()
                 .enumerate()
                 .map(|(layer_idx, c)| c.try_init(layer_idx, device))
-                .collect::<BunsenResult<Vec<NanoChatGptBlock<B>>>>()?,
+                .collect::<BunsenResult<Vec<NanoChatGptBlock>>>()?,
             h_norm: self.norm.clone().with_num_features(n_embed).init(device),
             lm_head: self.lm_head.init(device),
             r_emb: self.r_emb.try_init(device)?,
@@ -293,18 +292,18 @@ impl<B: Backend> ModuleInit<B, NanoChatGpt<B>> for NanoChatGptStructureConfig {
 ///
 /// Built by [`NanoChatGptConfig`].
 #[derive(Module, Debug)]
-pub struct NanoChatGpt<B: Backend> {
-    wte: Embedding<B>,
-    h: Vec<NanoChatGptBlock<B>>,
+pub struct NanoChatGpt {
+    wte: Embedding,
+    h: Vec<NanoChatGptBlock>,
     h_norm: Normalization<B>,
-    lm_head: Linear<B>,
-    r_emb: RotaryEmbedding<B>,
+    lm_head: Linear,
+    r_emb: RotaryEmbedding,
 
     init_seq_len: usize,
     softcap: f64,
 }
 
-impl<B: Backend> NanoChatGptMeta for NanoChatGpt<B> {
+impl NanoChatGptMeta for NanoChatGpt {
     fn n_embed(&self) -> usize {
         self.wte.weight.dims()[0]
     }
@@ -334,7 +333,7 @@ impl<B: Backend> NanoChatGptMeta for NanoChatGpt<B> {
     }
 }
 
-impl<B: Backend> NanoChatGpt<B> {
+impl NanoChatGpt {
     /// Forward Pass.
     ///
     /// # Arguments
@@ -342,9 +341,9 @@ impl<B: Backend> NanoChatGpt<B> {
     /// - `kv_cache`: a `KVCache`.
     pub fn forward(
         &self,
-        idx: Tensor<B, 2, Int>,
-        kv_cache: &mut Option<&mut KVCache<B>>,
-    ) -> Tensor<B, 3> {
+        idx: Tensor<2, Int>,
+        kv_cache: &mut Option<&mut KVCache>,
+    ) -> Tensor<3> {
         let [b, t] = unpack_shape_contract!(["B", "T"], &idx.dims());
         assert!(
             t <= self.r_emb.seq_len(),
@@ -391,7 +390,7 @@ impl<B: Backend> NanoChatGpt<B> {
     pub fn new_kv_cache(
         &self,
         batch_size: usize,
-    ) -> KVCache<B> {
+    ) -> KVCache {
         KVCacheConfig {
             batch_size,
             num_heads: self.n_kv_head(),
@@ -453,7 +452,7 @@ mod tests {
     fn test_gpt_forward() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch_size = 1;
         let seq_len = 100;
@@ -466,11 +465,11 @@ mod tests {
             .with_vocab_size(vocab_size)
             .with_n_embed(n_embed)
             .with_n_layer(n_layer);
-        let gpt: NanoChatGpt<B> = cfg.init(&device);
+        let gpt: NanoChatGpt = cfg.init(&device);
 
         let mut kv_cache = gpt.new_kv_cache(batch_size);
 
-        let input_tokens = Tensor::<B, 2>::random(
+        let input_tokens = Tensor::<2>::random(
             [batch_size, seq_len],
             Distribution::Uniform(0.0, vocab_size as f64),
             &device,

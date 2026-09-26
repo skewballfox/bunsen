@@ -211,7 +211,7 @@ mod tests {
         type B = PerformanceBackend;
 
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let dir = tempfile::tempdir().unwrap();
         let cache = PretrainedCache::new(
             PretrainedCacheOptions::default()
@@ -248,20 +248,20 @@ mod tests {
         );
 
         // The same numbers as the bytes loader's, on both branches.
-        let direct = SileroVadCollection::<B>::load_pretrained(&device).unwrap();
+        let direct = SileroVadCollection::load_pretrained(&device).unwrap();
         for rate in [16000, 8000] {
             let a = loaded.handle.expect_branch(rate);
             let b = direct.expect_branch(rate);
             let batch = 2;
-            let input = Tensor::<B, 2>::random(
+            let input = Tensor::<2>::random(
                 [batch, 64 + a.chunk_size()],
                 Distribution::Default,
                 &device,
             );
             let (pa, _) = a.forward(input.clone(), a.init_state(batch, &device));
             let (pb, _) = b.forward(input, b.init_state(batch, &device));
-            let pa: Vec<f32> = pa.into_data().to_vec().unwrap();
-            let pb: Vec<f32> = pb.into_data().to_vec().unwrap();
+            let pa: Vec<f32> = pa.into_data().try_to_vec().unwrap();
+            let pb: Vec<f32> = pb.into_data().try_to_vec().unwrap();
             assert_eq!(pa.len(), batch);
             for (x, y) in pa.iter().zip(&pb) {
                 assert!((x - y).abs() < 1e-5, "{rate} Hz: {x} vs {y}");

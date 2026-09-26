@@ -9,8 +9,7 @@ use burn::{
         NormalizationConfig,
         RmsNormConfig,
     },
-    prelude::Backend,
-};
+    };
 
 use crate::{
     blocks::transformers::{
@@ -68,20 +67,20 @@ impl NanoChatGptBlockConfig {
     /// Initializes a [`NanoChatGptBlock`].
     ///
     /// Panics on errors.
-    pub fn init<B: Backend>(
+    pub fn init(
         &self,
         layer_index: usize,
-        device: &B::Device,
-    ) -> NanoChatGptBlock<B> {
+        device: &Device,
+    ) -> NanoChatGptBlock {
         self.try_init(layer_index, device).ok_or_panic()
     }
 
     /// Initializes a [`NanoChatGptBlock`].
-    pub fn try_init<B: Backend>(
+    pub fn try_init(
         &self,
         layer_index: usize,
-        device: &B::Device,
-    ) -> BunsenResult<NanoChatGptBlock<B>> {
+        device: &Device,
+    ) -> BunsenResult<NanoChatGptBlock> {
         if self.attn.n_embed() != self.mlp.n_embed() {
             return Err(BunsenError::Invalid(format!(
                 "Attn and MLP embed sizes must be equal: {} != {}",
@@ -109,27 +108,27 @@ impl NanoChatGptBlockConfig {
 ///
 /// Built by [`NanoChatGptBlockConfig`].
 #[derive(Module, Debug)]
-pub struct NanoChatGptBlock<B: Backend> {
+pub struct NanoChatGptBlock {
     /// Input Normalization.
     pub input_norm: Normalization<B>,
 
     /// Attention.
-    pub attn: CausalSelfAttention<B>,
+    pub attn: CausalSelfAttention,
 
     /// Attention Normalization.
     pub attn_norm: Normalization<B>,
 
     /// MLP.
-    pub mlp: Mlp<B>,
+    pub mlp: Mlp,
 }
 
-impl<B: Backend> NanoChatGptBlockMeta for NanoChatGptBlock<B> {
+impl NanoChatGptBlockMeta for NanoChatGptBlock {
     fn n_embed(&self) -> usize {
         self.attn.n_embed()
     }
 }
 
-impl<B: Backend> NanoChatGptBlock<B> {
+impl NanoChatGptBlock {
     /// Forward Pass.
     ///
     /// # Usage Note
@@ -145,10 +144,10 @@ impl<B: Backend> NanoChatGptBlock<B> {
     /// - the `[B, T, D]` block output.
     pub fn forward(
         &self,
-        input: Tensor<B, 3>,
-        r_emb: &RotaryEmbedding<B>,
-        kv_cache: &mut Option<&mut KVCache<B>>,
-    ) -> Tensor<B, 3> {
+        input: Tensor<3>,
+        r_emb: &RotaryEmbedding,
+        kv_cache: &mut Option<&mut KVCache>,
+    ) -> Tensor<3> {
         let x = self.input_norm.forward(input);
         let x = self.attn.forward(x, r_emb, kv_cache);
         let x = self.attn_norm.forward(x);
@@ -177,7 +176,7 @@ mod tests {
     fn test_gpt_block_config() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let n_embed = 1024;
         let n_head = 128;
@@ -195,7 +194,7 @@ mod tests {
         assert_eq!(config.mlp.n_embed(), n_embed);
 
         let layer_index = 12;
-        let block: NanoChatGptBlock<B> = config.init(layer_index, &device);
+        let block: NanoChatGptBlock = config.init(layer_index, &device);
 
         assert_eq!(block.n_embed(), n_embed);
     }
@@ -205,7 +204,7 @@ mod tests {
     fn test_gpt_block_forward() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch = 2;
         let seq_len = 10;
@@ -220,12 +219,12 @@ mod tests {
             MlpConfig::new(n_embed).with_act_exponent(Some(2.0)),
         );
 
-        let block: NanoChatGptBlock<B> = config.init(layer_index, &device);
+        let block: NanoChatGptBlock = config.init(layer_index, &device);
 
         let input = Tensor::random([batch, seq_len, n_embed], Distribution::Default, &device);
 
         let r_emb = RotaryEmbeddingConfig::new(seq_len, block.attn.head_dim()).init(&device);
-        let mut kv_cache: Option<&mut KVCache<B>> = None;
+        let mut kv_cache: Option<&mut KVCache> = None;
 
         let output = block.forward(input.clone(), &r_emb, &mut kv_cache);
         assert_shape_contract!(

@@ -8,7 +8,6 @@ use burn::{
     Tensor,
     grad_clipping::GradientClipping,
     module::{
-        AutodiffModule,
         ModuleMapper,
         Param,
         ParamId,
@@ -26,14 +25,11 @@ use burn::{
         record::AdaptorRecord,
     },
     prelude::{
-        Backend,
         Device,
     },
     record::Record,
     tensor::backend::{
-        AutodiffBackend,
-        BackendTypes,
-    },
+        },
 };
 use hashbrown::{
     HashMap,
@@ -50,7 +46,7 @@ use crate::burner::optim::{
 pub struct OptimizerGroup<B, O>
 where
     B: AutodiffBackend,
-    O: SimpleOptimizer<B::InnerBackend>,
+    O: SimpleOptimizer</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>,
 {
     /// The Parameters assigned to this group.
     pub params: HashSet<ParamId>,
@@ -64,10 +60,10 @@ where
     phantom: PhantomData<B>,
 }
 
-impl<B, O> OptimizerGroup<B, O>
+impl<B, O> OptimizerGroup<O>
 where
     B: AutodiffBackend,
-    O: SimpleOptimizer<B::InnerBackend>,
+    O: SimpleOptimizer</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>,
 {
     /// Creates a new `GroupOptimizer` with the given parameters and optimizer.
     pub fn new(
@@ -89,7 +85,7 @@ where
     ) -> Self
     where
         I: IntoIterator<Item = ParamId>,
-        M: AutodiffModule<B>,
+        M: burn::module::Module,
     {
         Self::new(params.into_iter().collect(), adaptor.optim().clone())
     }
@@ -137,30 +133,30 @@ where
 pub struct OptimizerGroupRecord<O, B>
 where
     B: AutodiffBackend,
-    O: SimpleOptimizer<B::InnerBackend>,
+    O: SimpleOptimizer</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>,
 {
     /// The optimizer states for each parameter in the group.
     pub param_map: HashMap<ParamId, AdaptorRecord<O, B>>,
 }
 
-impl<O, B> Record<B> for OptimizerGroupRecord<O, B>
+impl<O, B> Record for OptimizerGroupRecord<O, B>
 where
     B: AutodiffBackend,
-    O: SimpleOptimizer<B::InnerBackend>,
+    O: SimpleOptimizer</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>,
 {
     type Item<S2: burn::record::PrecisionSettings> =
-        Vec<(String, <AdaptorRecord<O, B> as Record<B>>::Item<S2>)>;
+        Vec<(String, <AdaptorRecord<O, B> as Record>::Item<S2>)>;
 
     fn into_item<S2: burn::record::PrecisionSettings>(self) -> Self::Item<S2> {
         self.param_map
             .into_iter()
-            .map(|(k, v)| (k.to_string(), v.into_item::<S2>()))
+            .map(|(k, v)| (k.to_string(), /* TODO(burn 0.22 migration): records are ModuleRecord; PrecisionSettings and into_item were removed. See BREAKING_CHANGES.md #26. */ v.into_item::<S2>()))
             .collect()
     }
 
     fn from_item<S2: burn::record::PrecisionSettings>(
         item: Self::Item<S2>,
-        device: &B::Device,
+        device: &Device,
     ) -> Self {
         Self {
             param_map: item
@@ -199,14 +195,14 @@ fn step_group<B, O, const D: usize>(
     optim: &O,
     records: &mut HashMap<ParamId, AdaptorRecord<O, B>>,
     id: ParamId,
-    tensor: Tensor<B::InnerBackend, D>,
-    grad: Tensor<B::InnerBackend, D>,
+    tensor: Tensor</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend, D>,
+    grad: Tensor</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend, D>,
     device: &<<B as AutodiffBackend>::InnerBackend as BackendTypes>::Device,
     lr: LearningRate,
-) -> Tensor<B::InnerBackend, D>
+) -> Tensor</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend, D>
 where
     B: AutodiffBackend,
-    O: SimpleOptimizer<B::InnerBackend>,
+    O: SimpleOptimizer</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>,
 {
     let (key, record) = records.remove_entry(&id).unzip();
     let state = record.map(|r| O::to_device(r.into_state(), device));

@@ -51,7 +51,7 @@ mod tests {
         type B = CpuBackend;
         let device = default_device();
 
-        let source: Tensor<B, 2> = Tensor::random([2, 3], Distribution::Default, &device);
+        let source: Tensor<2> = Tensor::random([2, 3], Distribution::Default, &device);
 
         let boxed: Box<dyn CloneBox> = Box::new(source.clone());
 
@@ -59,7 +59,7 @@ mod tests {
 
         let cloned_box = boxed.clone();
 
-        let clone = cloned_box.downcast_ref::<Tensor<B, 2>>().unwrap();
+        let clone = cloned_box.downcast_ref::<Tensor<2>>().unwrap();
 
         clone.to_data().assert_eq(&source.to_data(), true);
     }

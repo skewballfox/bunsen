@@ -2,7 +2,6 @@
 
 use std::ops::Range;
 
-use burn::prelude::Backend;
 use serde::{
     Deserialize,
     Serialize,
@@ -11,9 +10,9 @@ use serde::{
 pub mod slices;
 
 /// Common control for Conway's Game of Life sims.
-pub trait ConwaySim<B: Backend> {
+pub trait ConwaySim {
     /// Returns the device the module is on.
-    fn device(&self) -> B::Device;
+    fn device(&self) -> Device;
 
     /// Adds uniform positive noise to the board.
     fn fuzz(

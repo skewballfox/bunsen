@@ -395,18 +395,18 @@ mod tests {
         assert!(matches!(err, BunsenError::External(_)), "{err:?}");
     }
 
-    fn logits<B: Backend>(
+    fn logits(
         rows: &[&[f32]],
-        device: &B::Device,
-    ) -> Tensor<B, 2> {
+        device: &Device,
+    ) -> Tensor<2> {
         let vocab = rows[0].len();
         let flat: Vec<f32> = rows.iter().flat_map(|r| r.iter().copied()).collect();
         Tensor::from_data(TensorData::new(flat, [rows.len(), vocab]), device)
     }
 
-    fn to_rows<B: Backend>(t: Tensor<B, 2>) -> Vec<Vec<f32>> {
+    fn to_rows(t: Tensor<2>) -> Vec<Vec<f32>> {
         let [rows, vocab] = t.dims();
-        let flat = t.to_data().convert::<f32>().to_vec::<f32>().unwrap();
+        let flat = t.to_data().convert::<f32>().try_to_vec::<f32>().unwrap();
         flat.chunks(vocab).map(|c| c.to_vec()).collect::<Vec<_>>()[..rows].to_vec()
     }
 

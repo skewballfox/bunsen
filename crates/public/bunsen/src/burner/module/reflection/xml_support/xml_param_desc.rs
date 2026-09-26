@@ -74,7 +74,7 @@ pub fn node_to_tensor_param_desc(
 
     // TODO: Extract, real errors.
     let param_id: ParamId =
-        ParamId::deserialize(&get_attr(&attrs, param_id_nid, names::PARAM_ID_ATTR)?);
+        get_attr(&attrs, param_id_nid, names::PARAM_ID_ATTR)?.parse::<ParamId>().expect("invalid ParamId");
     let kind = TensorKindDesc::from_str(&get_attr(&attrs, kind_nid, names::KIND_ATTR)?).unwrap();
     let dtype = dtype_from_str(&get_attr(&attrs, dtype_nid, names::DTYPE_ATTR)?)?;
     assert_eq!(kind, dtype.into());

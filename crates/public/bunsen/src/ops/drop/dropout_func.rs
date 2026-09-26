@@ -1,6 +1,5 @@
 use burn::{
     Tensor,
-    prelude::Backend,
     tensor::Distribution,
 };
 
@@ -14,10 +13,10 @@ use burn::{
 /// # Arguments
 /// * `prob` - the drop probability.
 /// * `input` - the input tensor.
-pub fn dropout<B: Backend, const D: usize>(
+pub fn dropout<const D: usize>(
     prob: f64,
-    input: Tensor<B, D>,
-) -> Tensor<B, D> {
+    input: Tensor<D>,
+) -> Tensor<D> {
     if prob == 0.0 {
         return input;
     }
@@ -55,8 +54,8 @@ mod tests {
     fn dropout_prob_0_should_return_input() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let input = Tensor::<B, 2>::random([10, 3], Distribution::Default, &device);
+        let _memory = DeviceMemoryGuard::new(&device);
+        let input = Tensor::<2>::random([10, 3], Distribution::Default, &device);
 
         let output = dropout(0., input.clone());
 
@@ -68,10 +67,10 @@ mod tests {
     fn dropout_rates_stochastic_test() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        B::seed(&device, 0);
+        let _memory = DeviceMemoryGuard::new(&device);
+        device.seed(0);
 
-        let input = Tensor::<B, 2>::ones([10, 10], &device);
+        let input = Tensor::<2>::ones([10, 10], &device);
         let num_elem = input.shape().num_elements();
 
         let prob = 0.25;
@@ -84,16 +83,12 @@ mod tests {
             .clone()
             .equal_elem(0.0)
             .float()
-            .sum()
-            .into_scalar()
-            .elem();
+            .sum().into_scalar();
         let keep_count: f32 = output
             .clone()
             .equal_elem(keep_value)
             .float()
-            .sum()
-            .into_scalar()
-            .elem();
+            .sum().into_scalar();
 
         assert_eq!(keep_count, num_elem as f32 - drop_count);
 
@@ -107,9 +102,9 @@ mod tests {
     fn dropout_prob_invalid() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
-        let input = Tensor::<B, 1>::ones([10], &device);
+        let input = Tensor::<1>::ones([10], &device);
         let _ = dropout(-10., input);
     }
 }

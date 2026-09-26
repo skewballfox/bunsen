@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let device = backend_device::<B>();
 
-    let data_loader: ChatDataLoader<B> = ChatDataLoader::new(
+    let data_loader: ChatDataLoader = ChatDataLoader::new(
         shard_paths,
         Some(Arc::new(Mutex::new(StdRng::seed_from_u64(0)))),
         &device,

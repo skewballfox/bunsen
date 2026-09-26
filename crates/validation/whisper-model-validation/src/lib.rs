@@ -95,7 +95,7 @@ pub fn weights_cache() -> bunsen::data::pretrained::PretrainedCache {
 /// bunsen's Whisper `openai/base`, at the precision it ships in (fp16), with
 /// its token layout and vocabulary, shared.
 pub fn load_base<B: burn::prelude::Backend>(
-    device: &B::Device
+    device: &Device
 ) -> std::sync::Arc<bunsen::kits::speech::whisper::driver::WhisperBundle<B>> {
     bunsen::kits::speech::whisper::pretrained::default_whisper_factory()
         .expect("the whisper factory")
@@ -124,8 +124,8 @@ pub const TOKENS: [i64; 4] = [50258, 50259, 50359, 1770];
 /// Cheap and seed-free, so both implementations get bit-identical input
 /// without needing an audio fixture.
 pub fn synthetic_mels<B: burn::prelude::Backend>(
-    device: &B::Device
-) -> burn::prelude::Tensor<B, 3> {
+    device: &Device
+) -> burn::prelude::Tensor<3> {
     use burn::prelude::*;
 
     let data: Vec<f64> = (0..N_MELS * N_FRAMES)
@@ -144,8 +144,8 @@ pub fn synthetic_mels<B: burn::prelude::Backend>(
 /// Using a synthetic `xa` rather than either encoder's real output isolates
 /// the decoder: a disagreement cannot be inherited from upstream.
 pub fn synthetic_encoder_output<B: burn::prelude::Backend>(
-    device: &B::Device
-) -> burn::prelude::Tensor<B, 3> {
+    device: &Device
+) -> burn::prelude::Tensor<3> {
     use burn::prelude::*;
 
     let (seq, width) = (N_FRAMES / 2, D_MODEL);

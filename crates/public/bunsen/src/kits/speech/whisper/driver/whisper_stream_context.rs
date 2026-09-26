@@ -39,7 +39,6 @@ use burn::{
     Tensor,
     module::Module,
     prelude::{
-        Backend,
         TensorData,
     },
 };
@@ -85,7 +84,7 @@ use crate::{
 };
 
 /// One context's due unit, packaged and ready to join a batch.
-struct Pending<B: Backend> {
+struct Pending {
     /// Index into the contexts being advanced.
     context: usize,
     unit: Due,
@@ -94,7 +93,7 @@ struct Pending<B: Backend> {
     /// The prompt it decodes under; what it is batched by.
     prompt: Vec<i64>,
     /// `[1, n_mels, width]`.
-    window: Tensor<B, 3>,
+    window: Tensor<3>,
 }
 
 /// Advances every context that has a decode due, batching the decodes.
@@ -113,15 +112,15 @@ struct Pending<B: Backend> {
 ///
 /// # Errors
 /// As [`WhisperStreamContext::read`].
-pub fn advance_ready<B: Backend>(
-    driver: &WhisperStreamDriver<B>,
-    contexts: &mut [WhisperStreamContext<B>],
+pub fn advance_ready(
+    driver: &WhisperStreamDriver,
+    contexts: &mut [WhisperStreamContext],
 ) -> BunsenResult<Vec<Vec<TranscriptEvent>>> {
     let mut out: Vec<Vec<TranscriptEvent>> = vec![Vec::new(); contexts.len()];
 
     loop {
         // One due unit per context, with the prompt it would decode under.
-        let mut pending: Vec<Option<Pending<B>>> = Vec::new();
+        let mut pending: Vec<Option<Pending>> = Vec::new();
         for (i, ctx) in contexts.iter_mut().enumerate() {
             ctx.skip_silence();
             let (unit, draft) = match ctx.next_due() {
@@ -156,7 +155,7 @@ pub fn advance_ready<B: Backend>(
         }
 
         for (prompt, members) in groups {
-            let windows: Vec<Tensor<B, 3>> = members
+            let windows: Vec<Tensor<3>> = members
                 .iter()
                 .map(|&k| pending[k].as_ref().expect("not yet taken").window.clone())
                 .collect();
@@ -197,15 +196,15 @@ pub fn advance_ready<B: Backend>(
 /// neither a boxed policy nor a policy type parameter survives it. The
 /// policy stays behind its trait, boxed, and the context is `Clone + Debug`.
 #[derive(Clone, Debug)]
-pub struct WhisperStreamContext<B: Backend> {
-    driver: WhisperStreamDriver<B>,
+pub struct WhisperStreamContext {
+    driver: WhisperStreamDriver,
 
     /// The mel front end's streaming state; `None` once flushed.
-    audio_conversion_ctx: Option<PerceptiveAudioConversionContext<B>>,
+    audio_conversion_ctx: Option<PerceptiveAudioConversionContext>,
 
     /// `[1, frames, n_mels]` log-mels from `origin` onward; `None`
     /// when empty.
-    frames: Option<Tensor<B, 3>>,
+    frames: Option<Tensor<3>>,
 
     /// Samples not yet a whole hop.
     staging: Vec<f32>,
@@ -241,7 +240,7 @@ pub struct WhisperStreamContext<B: Backend> {
 
     /// Voice activity, when the driver has a VAD and the policy wants
     /// endpoints.
-    vad: Option<VoiceActivity<B>>,
+    vad: Option<VoiceActivity>,
 
     finished: bool,
 }
@@ -249,9 +248,9 @@ pub struct WhisperStreamContext<B: Backend> {
 /// The voice-activity half of a stream: Silero's state, the filter, and the
 /// regions it has closed but the decode has not yet consumed.
 #[derive(Clone, Debug)]
-struct VoiceActivity<B: Backend> {
+struct VoiceActivity {
     /// Silero's recurrent state; `None` only while a step is in flight.
-    context: Option<SileroVadContext<B>>,
+    context: Option<SileroVadContext>,
 
     filter: VoiceActivityFilter,
 
@@ -279,10 +278,10 @@ struct Due {
     count: usize,
 }
 
-impl<B: Backend> WhisperStreamContext<B> {
+impl WhisperStreamContext {
     /// Initialize a new context.
     pub fn init(
-        driver: WhisperStreamDriver<B>,
+        driver: WhisperStreamDriver,
         clock: StreamClock,
         clamp: Box<dyn StreamClampPolicy<B>>,
     ) -> Self {
@@ -537,7 +536,7 @@ impl<B: Backend> WhisperStreamContext<B> {
 
         let chunk: Vec<f64> = self.staging.drain(..whole).map(f64::from).collect();
         let device = self.driver.devices()[0].clone();
-        let waves: Tensor<B, 2> = Tensor::from_data(TensorData::new(chunk, [1, whole]), &device);
+        let waves: Tensor<2> = Tensor::from_data(TensorData::new(chunk, [1, whole]), &device);
 
         let ctx = self
             .audio_conversion_ctx
@@ -552,7 +551,7 @@ impl<B: Backend> WhisperStreamContext<B> {
     /// Appends frames to the ring, offering them to the clamp policy first.
     fn ingest(
         &mut self,
-        new: Tensor<B, 3>,
+        new: Tensor<3>,
     ) {
         self.clamp.observe(new.clone());
         self.frames = Some(match self.frames.take() {
@@ -587,14 +586,14 @@ impl<B: Backend> WhisperStreamContext<B> {
             let steps = whole / chunk;
             let samples: Vec<f32> = vad.staging.drain(..whole).collect();
             let device = model.devices()[0].clone();
-            let chunks: Tensor<B, 3> =
+            let chunks: Tensor<3> =
                 Tensor::from_data(TensorData::new(samples, [steps, 1, chunk]), &device);
 
             let context = vad.context.take().expect("present between steps");
             let (probs, context) = model.context_forward_sequence(chunks, context);
             vad.context = Some(context);
 
-            let probs: Vec<f32> = probs.to_data().convert::<f32>().to_vec().unwrap();
+            let probs: Vec<f32> = probs.to_data().convert::<f32>().try_to_vec().unwrap();
             for p in probs {
                 if let Some(raw) = vad.filter.step(p) {
                     vad.enqueue(raw, total);
@@ -692,7 +691,7 @@ impl<B: Backend> WhisperStreamContext<B> {
     fn frames_at(
         &self,
         unit: &Due,
-    ) -> Tensor<B, 3> {
+    ) -> Tensor<3> {
         let ring = self.frames.as_ref().expect("due frames exist");
         let start = (unit.start - self.origin) as isize;
         ring.clone()
@@ -705,8 +704,8 @@ impl<B: Backend> WhisperStreamContext<B> {
     /// out to the model's width: `[1, n_mels, width]`. Takes `&self`.
     fn package_padded(
         &self,
-        window: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        window: Tensor<3>,
+    ) -> Tensor<3> {
         let reference = self.clamp.reference(window.clone());
         let packaged = self.driver.front_end().package_window(window, reference);
 
@@ -725,7 +724,7 @@ impl<B: Backend> WhisperStreamContext<B> {
     /// provisional decode.
     fn decode_frames(
         &self,
-        window: Tensor<B, 3>,
+        window: Tensor<3>,
     ) -> DecodedTokens {
         let base = self.driver.decode_config(self.prompt_now());
         self.ladder(&base, self.package_padded(window), None)
@@ -741,11 +740,11 @@ impl<B: Backend> WhisperStreamContext<B> {
     fn ladder(
         &self,
         base: &DecodeConfig,
-        window: Tensor<B, 3>,
+        window: Tensor<3>,
         first: Option<DecodedTokens>,
     ) -> DecodedTokens {
         let model = self.driver.whisper_model();
-        let mut xa: Option<Tensor<B, 3>> = None;
+        let mut xa: Option<Tensor<3>> = None;
         decode_with_fallback(
             &self.driver.config().fallback,
             base,
@@ -799,7 +798,7 @@ impl<B: Backend> WhisperStreamContext<B> {
     /// `detect_language`, on the same features the decode will use.
     fn ensure_language(
         &mut self,
-        frames: &Tensor<B, 3>,
+        frames: &Tensor<3>,
     ) {
         if self.language.is_some() || !self.driver.detects_language() {
             return;
@@ -988,7 +987,7 @@ impl<B: Backend> WhisperStreamContext<B> {
     }
 }
 
-impl<B: Backend> VoiceActivity<B> {
+impl VoiceActivity {
     /// Pads a raw region as far as the stream allows, snaps it outward onto
     /// the encoder grid, and queues it.
     ///
@@ -1058,8 +1057,8 @@ mod tests {
     /// A tiny model whose vocabulary fits the tiny layout and whose window
     /// is 16 frames (2560 samples), so a short clip has several windows.
     /// Seeded, so a run is the same run on the same backend.
-    fn tiny_model_on<B: Backend>(device: &B::Device) -> Whisper<B> {
-        B::seed(device, 7);
+    fn tiny_model_on(device: &Device) -> Whisper {
+        device.seed(7);
         WhisperApiConfig::new(
             /* n_mels */ 8,
             /* vocab_size */ tiny_layout().n_vocab(),
@@ -1079,10 +1078,10 @@ mod tests {
             .with_condition_on_previous_text(carry)
     }
 
-    fn driver<B: Backend>(
-        device: &B::Device,
+    fn driver(
+        device: &Device,
         carry: bool,
-    ) -> WhisperStreamDriver<B> {
+    ) -> WhisperStreamDriver {
         config(carry)
             .init_with_layout(
                 tiny_model_on::<B>(device),
@@ -1146,7 +1145,7 @@ mod tests {
     }
 
     fn push_in_pieces(
-        ctx: &mut WhisperStreamContext<B>,
+        ctx: &mut WhisperStreamContext,
         audio: &[f32],
         sizes: &[usize],
     ) -> Vec<TranscriptEvent> {
@@ -1171,12 +1170,12 @@ mod tests {
     /// The whole clip through the front end in one call, joined with its
     /// tail: what `package_mels` and `decode_chunked` start from.
     fn joined_mels(
-        driver: &WhisperStreamDriver<B>,
+        driver: &WhisperStreamDriver,
         audio: &[f32],
         device: &Device,
-    ) -> Tensor<B, 3> {
+    ) -> Tensor<3> {
         let n = audio.len();
-        let waves: Tensor<B, 2> = Tensor::from_data(
+        let waves: Tensor<2> = Tensor::from_data(
             TensorData::new(
                 audio.iter().map(|&v| f64::from(v)).collect::<Vec<_>>(),
                 [1, n],
@@ -1194,7 +1193,7 @@ mod tests {
         }
     }
 
-    fn greedy_config(driver: &WhisperStreamDriver<B>) -> GreedyDecodeConfig {
+    fn greedy_config(driver: &WhisperStreamDriver) -> GreedyDecodeConfig {
         GreedyDecodeConfig::new(driver.prompt().to_vec(), driver.token_layout().ids().eot)
             .with_max_tokens(driver.config().max_tokens)
     }
@@ -1314,7 +1313,7 @@ mod tests {
     #[serial]
     fn test_segments_sit_on_the_clock() {
         let device = Device::default();
-        let driver: WhisperStreamDriver<B> = driver(&device, false);
+        let driver: WhisperStreamDriver = driver(&device, false);
         let audio = clip();
         let hop = driver.audio_converter().hop() as f64;
         let width = driver.window_frames();
@@ -1347,8 +1346,8 @@ mod tests {
     #[serial]
     fn test_prompt_carry() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let driver: WhisperStreamDriver<B> = driver(&device, true);
+        let _memory = DeviceMemoryGuard::new(&device);
+        let driver: WhisperStreamDriver = driver(&device, true);
         let audio = clip();
         let width = driver.window_frames();
 
@@ -1410,8 +1409,8 @@ mod tests {
         }
 
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let driver: WhisperStreamDriver<B> =
+        let _memory = DeviceMemoryGuard::new(&device);
+        let driver: WhisperStreamDriver =
             driver(&device, false).with_detokenizer(Arc::new(Numbers));
         let audio = clip();
 
@@ -1435,8 +1434,8 @@ mod tests {
     #[serial]
     fn test_lifecycle_edges() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
-        let driver: WhisperStreamDriver<B> = driver(&device, false);
+        let _memory = DeviceMemoryGuard::new(&device);
+        let driver: WhisperStreamDriver = driver(&device, false);
 
         let mut empty = driver.new_context(clock(), PerWindow).unwrap();
         assert!(empty.end_read().unwrap().is_empty());
@@ -1496,7 +1495,7 @@ mod tests {
             );
         }
 
-        let mut contexts: Vec<WhisperStreamContext<B>> = (0..3)
+        let mut contexts: Vec<WhisperStreamContext> = (0..3)
             .map(|_| driver.new_context(clock(), PerWindow).unwrap())
             .collect();
         // The two clips go in whole, so the front end's arithmetic is the
@@ -1605,10 +1604,10 @@ mod tests {
     impl LogitFilter<B> for Echo {
         fn apply(
             &self,
-            logits: Tensor<B, 2>,
+            logits: Tensor<2>,
             tokens: &[Vec<i64>],
             prompt_len: usize,
-        ) -> Tensor<B, 2> {
+        ) -> Tensor<2> {
             let [rows, vocab] = logits.dims();
             let mut data = vec![f32::NEG_INFINITY; rows * vocab];
             for (row, t) in tokens.iter().enumerate() {
@@ -1644,7 +1643,7 @@ mod tests {
     fn timestamped(
         device: &Device,
         commit: CommitRule,
-    ) -> WhisperStreamDriver<B> {
+    ) -> WhisperStreamDriver {
         let scripted: Arc<dyn LogitFilter<B>> = Arc::new(Script(script()));
         config(false)
             .with_max_tokens(8)
@@ -1662,7 +1661,7 @@ mod tests {
 
     /// Pushes a clip through a fresh context and flushes it.
     fn run_clip(
-        driver: &WhisperStreamDriver<B>,
+        driver: &WhisperStreamDriver,
         audio: &[f32],
         at: Option<f64>,
     ) -> Vec<TranscriptEvent> {
@@ -1794,10 +1793,10 @@ mod tests {
     impl LogitFilter<B> for Degenerate {
         fn apply(
             &self,
-            logits: Tensor<B, 2>,
+            logits: Tensor<2>,
             tokens: &[Vec<i64>],
             prompt_len: usize,
-        ) -> Tensor<B, 2> {
+        ) -> Tensor<2> {
             let [rows, vocab] = logits.dims();
             let mut data = vec![-0.01f32; rows * vocab];
             for (row, t) in tokens.iter().enumerate() {
@@ -1821,7 +1820,7 @@ mod tests {
     fn degenerate_driver(
         device: &Device,
         fallback: WhisperFallbackConfig,
-    ) -> WhisperStreamDriver<B> {
+    ) -> WhisperStreamDriver {
         let filter: Arc<dyn LogitFilter<B>> = Arc::new(Degenerate);
         config(true)
             .with_max_tokens(8)
@@ -2002,7 +2001,7 @@ mod tests {
     #[serial]
     fn test_init_refuses_the_unsupported() {
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
         let policy = WhisperTokenLayout::new(tiny_layout());
         let base = WhisperStreamDriverConfig::new().with_language(Some("en".to_string()));
 
@@ -2056,7 +2055,7 @@ mod tests {
         assert!(conservative.new_context(clock(), PerWindow).is_err());
 
         // A clock at the wrong rate is refused at the stream, not later.
-        let driver: WhisperStreamDriver<B> = driver(&device, false);
+        let driver: WhisperStreamDriver = driver(&device, false);
         assert!(
             driver
                 .new_context(StreamClock::uniform(8_000), PerWindow)

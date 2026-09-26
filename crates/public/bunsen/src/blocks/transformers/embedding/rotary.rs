@@ -7,7 +7,6 @@ use burn::{
     config::Config,
     module::Module,
     prelude::{
-        Backend,
         s,
     },
     tensor::{
@@ -59,11 +58,11 @@ impl RotaryEmbeddingMeta for RotaryEmbeddingConfig {
     }
 }
 
-impl<B: Backend> ModuleInit<B, RotaryEmbedding<B>> for RotaryEmbeddingConfig {
+impl ModuleInit<RotaryEmbedding> for RotaryEmbeddingConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<RotaryEmbedding<B>> {
+        device: &Device,
+    ) -> BunsenResult<RotaryEmbedding> {
         if !self.head_dim.is_multiple_of(2) {
             return Err(BunsenError::Invalid(format!(
                 "Head dimension must be even: {}",
@@ -111,18 +110,18 @@ impl<B: Backend> ModuleInit<B, RotaryEmbedding<B>> for RotaryEmbeddingConfig {
 ///
 /// Built by [`RotaryEmbeddingConfig`].
 #[derive(Module, Debug)]
-pub struct RotaryEmbedding<B: Backend> {
+pub struct RotaryEmbedding {
     /// Head Dimension, D
     pub head_dim: usize,
 
     /// a `[1, T, 1, D/2]` tensor.
-    pub cos: Tensor<B, 4>,
+    pub cos: Tensor<4>,
 
     /// a `[1, T, 1, D/2]` tensor.
-    pub sin: Tensor<B, 4>,
+    pub sin: Tensor<4>,
 }
 
-impl<B: Backend> RotaryEmbeddingMeta for RotaryEmbedding<B> {
+impl RotaryEmbeddingMeta for RotaryEmbedding {
     fn seq_len(&self) -> usize {
         self.cos.dims()[1]
     }
@@ -132,7 +131,7 @@ impl<B: Backend> RotaryEmbeddingMeta for RotaryEmbedding<B> {
     }
 }
 
-impl<B: Backend> RotaryEmbedding<B> {
+impl RotaryEmbedding {
     /// Casts the embedding to a different dtype.
     pub fn cast(
         self,
@@ -172,8 +171,8 @@ impl<B: Backend> RotaryEmbedding<B> {
     /// - a `[B, T, H, D]` tensor.
     pub fn apply(
         &self,
-        input: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+        input: Tensor<4>,
+    ) -> Tensor<4> {
         #[cfg(debug_assertions)]
         let [b, h] = crate::contracts::unpack_shape_contract!(
             ["B", "T", "H", "D"],
@@ -216,11 +215,11 @@ impl<B: Backend> RotaryEmbedding<B> {
 ///
 /// # Returns
 /// - `[(1.0 / (base**(d / head_dim))) for d in 0:head_dim:2]`
-pub fn inverse_frequency_table<B: Backend>(
+pub fn inverse_frequency_table(
     base: usize,
     head_dim: usize,
-    device: &B::Device,
-) -> Tensor<B, 1> {
+    device: &Device,
+) -> Tensor<1> {
     Tensor::from_data([base as f32], device).powf(
         -Tensor::arange_step(0..head_dim as i64, 2, device)
             .float()
@@ -238,15 +237,15 @@ pub fn inverse_frequency_table<B: Backend>(
 ///
 /// # Returns
 /// - `[T, F=D/2]` sequence x inverse frequency table.
-pub fn positional_frequency_table<B: Backend>(
+pub fn positional_frequency_table(
     seq_len: usize,
     base: usize,
     head_dim: usize,
-    device: &B::Device,
-) -> Tensor<B, 2> {
+    device: &Device,
+) -> Tensor<2> {
     let inv_freq = inverse_frequency_table::<B>(base, head_dim, device);
 
-    let t: Tensor<B, 1> = Tensor::arange(0..seq_len as i64, device).float();
+    let t: Tensor<1> = Tensor::arange(0..seq_len as i64, device).float();
 
     linalg::outer::<_, 1, 2, _>(t, inv_freq)
 }
@@ -274,7 +273,7 @@ mod tests {
     fn test_inverse_frequency_table() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let base = 10000;
         let head_dim = 4;
@@ -285,7 +284,7 @@ mod tests {
         inverse_frequency_table::<B>(base, head_dim, &device)
             .to_data()
             .assert_approx_eq(
-                &Tensor::<B, 1>::from_data(
+                &Tensor::<1>::from_data(
                     [
                         1.0 / base_f.powf(0.0 / head_dim_f),
                         1.0 / base_f.powf(2.0 / head_dim_f),
@@ -302,7 +301,7 @@ mod tests {
     fn test_frequency_matrix() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let base = 10000;
         let head_dim = 4;
@@ -313,7 +312,7 @@ mod tests {
         positional_frequency_table::<B>(3, base, head_dim, &device)
             .to_data()
             .assert_approx_eq(
-                &Tensor::<B, 2>::from_data(
+                &Tensor::<2>::from_data(
                     [
                         [0.0, 0.0],
                         [
@@ -337,10 +336,10 @@ mod tests {
     fn test_clip_range() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let config = RotaryEmbeddingConfig::new(1024, 64);
-        let re: RotaryEmbedding<B> = config.init(&device);
+        let re: RotaryEmbedding = config.init(&device);
         assert_eq!(re.seq_len(), 1024);
         assert_eq!(re.head_dim(), 64);
 
@@ -363,7 +362,7 @@ mod tests {
     fn test_rotary_embedding() {
         type B = PerformanceBackend;
         let device = default_device();
-        let _memory = DeviceMemoryGuard::<B>::new(&device);
+        let _memory = DeviceMemoryGuard::new(&device);
 
         let batch = 1;
         let heads = 2;
@@ -375,11 +374,11 @@ mod tests {
         assert_eq!(config.head_dim(), head_dim);
         assert_eq!(config.base, 10000);
 
-        let re: RotaryEmbedding<B> = config.init(&device);
+        let re: RotaryEmbedding = config.init(&device);
         assert_eq!(re.seq_len(), seq_len);
         assert_eq!(re.head_dim(), head_dim);
 
-        let input: Tensor<B, 4> = Tensor::random(
+        let input: Tensor<4> = Tensor::random(
             [batch, seq_len, heads, head_dim],
             Distribution::Default,
             &device,

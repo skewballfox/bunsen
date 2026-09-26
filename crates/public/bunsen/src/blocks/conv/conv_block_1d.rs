@@ -27,7 +27,6 @@ use burn::{
         },
     },
     prelude::{
-        Backend,
         Tensor,
     },
 };
@@ -216,11 +215,11 @@ impl ConvBlock1dConfig {
 
 /// Auto-matches the norm layer input channels
 /// to the conv layer's output channels.
-impl<B: Backend> ModuleInit<B, ConvBlock1d<B>> for ConvBlock1dConfig {
+impl ModuleInit<ConvBlock1d> for ConvBlock1dConfig {
     fn try_init(
         &self,
-        device: &B::Device,
-    ) -> BunsenResult<ConvBlock1d<B>> {
+        device: &Device,
+    ) -> BunsenResult<ConvBlock1d> {
         let out_channels = self.out_channels();
         Ok(ConvBlock1d {
             conv: self.conv.init(device),
@@ -247,9 +246,9 @@ impl<B: Backend> ModuleInit<B, ConvBlock1d<B>> for ConvBlock1dConfig {
 ///
 /// Built by [`ConvBlock1dConfig`].
 #[derive(Module, Debug)]
-pub struct ConvBlock1d<B: Backend> {
+pub struct ConvBlock1d {
     /// Internal Conv1d layer.
-    pub conv: Conv1d<B>,
+    pub conv: Conv1d,
 
     /// Internal Norm Layer.
     pub norm: Option<Normalization<B>>,
@@ -258,7 +257,7 @@ pub struct ConvBlock1d<B: Backend> {
     pub act: Option<Activation<B>>,
 }
 
-impl<B: Backend> ConvBlock1dMeta for ConvBlock1d<B> {
+impl ConvBlock1dMeta for ConvBlock1d {
     fn in_channels(&self) -> usize {
         self.conv.weight.dims()[1] * self.groups()
     }
@@ -288,7 +287,7 @@ impl<B: Backend> ConvBlock1dMeta for ConvBlock1d<B> {
     }
 }
 
-impl<B: Backend> ConvBlock1d<B> {
+impl ConvBlock1d {
     /// Forward Pass.
     ///
     /// Applies the conv/norm/act images in sequence:
@@ -316,8 +315,8 @@ impl<B: Backend> ConvBlock1d<B> {
     /// [`ConvBlock1dMeta::try_output_length`].
     pub fn forward(
         &self,
-        input: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+        input: Tensor<3>,
+    ) -> Tensor<3> {
         self.map_forward(input, |x| x)
     }
 
@@ -351,11 +350,11 @@ impl<B: Backend> ConvBlock1d<B> {
     /// [`ConvBlock1dMeta::try_output_length`].
     pub fn map_forward<F>(
         &self,
-        input: Tensor<B, 3>,
+        input: Tensor<3>,
         f: F,
-    ) -> Tensor<B, 3>
+    ) -> Tensor<3>
     where
-        F: FnOnce(Tensor<B, 3>) -> Tensor<B, 3>,
+        F: FnOnce(Tensor<3>) -> Tensor<3>,
     {
         #[cfg(debug_assertions)]
         use crate::{
@@ -496,7 +495,7 @@ mod tests {
     #[test]
     fn test_dilated_forward_shape() {
         type I = CpuBackend;
-        type B = Autodiff<I>;
+        type B = /* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<I>;
         let device = backend_device::<B>();
 
         // Dilated, valid-padded block: previously incompatible with the
@@ -510,7 +509,7 @@ mod tests {
         .with_norm(None)
         .with_act(None);
 
-        let layer: ConvBlock1d<B> = config.init(&device);
+        let layer: ConvBlock1d = config.init(&device);
 
         let input = Tensor::random([2, 2, 10], Distribution::Default, &device);
         let output = layer.forward(input);
@@ -522,7 +521,7 @@ mod tests {
     #[test]
     fn test_cb() {
         type I = CpuBackend;
-        type B = Autodiff<I>;
+        type B = /* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ Autodiff<I>;
         let device = backend_device::<B>();
 
         let config = ConvBlock1dConfig::new(
@@ -534,7 +533,7 @@ mod tests {
         .with_norm(Some(NormalizationConfig::Batch(BatchNormConfig::new(0))))
         .with_act(Some(ActivationConfig::Relu));
 
-        let layer: ConvBlock1d<B> = config.init(&device);
+        let layer: ConvBlock1d = config.init(&device);
         assert_eq!(layer.in_channels(), 2);
         assert_eq!(layer.out_channels(), 4);
         assert_eq!(layer.groups(), 1);

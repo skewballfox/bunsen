@@ -59,11 +59,8 @@ use burn::{
         Int,
         Tensor,
     },
-    record::CompactRecorder,
     tensor::backend::{
-        AutodiffBackend,
-        Backend,
-    },
+        },
     train::{
         InferenceStep,
         Learner,
@@ -258,7 +255,7 @@ fn main() -> anyhow::Result<()> {
                 type B = burn::backend::Flex;
             }
         }
-        train::<burn::backend::Autodiff<B>>(&args)
+        train::</* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ burn::backend::Autodiff<B>>(&args)
     } else {
         cfg_select! {
             feature = "cuda" => {
@@ -274,7 +271,7 @@ fn main() -> anyhow::Result<()> {
                 type B = burn::backend::Flex;
             }
         }
-        train::<burn::backend::Autodiff<B>>(&args)
+        train::</* TODO(burn 0.22 migration): use device.autodiff() before you make the model and the inputs. See BREAKING_CHANGES.md #33. */ burn::backend::Autodiff<B>>(&args)
     }
 }
 
@@ -286,7 +283,7 @@ fn ensure_artifact_dir(artifact_dir: &str) -> anyhow::Result<()> {
 
 #[must_use]
 pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
-    let device: B::Device = Default::default();
+    let device: Device = Default::default();
 
     let factory = default_resnet_factory()?;
 
@@ -317,7 +314,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     let artifact_dir: &str = args.artifact_dir.as_ref();
     ensure_artifact_dir(artifact_dir)?;
 
-    B::seed(&device, args.seed);
+    device.seed(args.seed);
 
     let mut resnet_config = prefab.to_config();
 
@@ -340,7 +337,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         }
     }
 
-    let model: ResNet<B> = resnet_config.clone().try_init(&device)?;
+    let model: ResNet = resnet_config.clone().try_init(&device)?;
 
     let old_float_type = model.output_fc.weight.dtype();
 
@@ -352,7 +349,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         .load::<B>(&cache, &device)
         .context("Failed to load pretrained weights")?;
 
-    let mut model: ResNet<B> = Arc::unwrap_or_clone(loaded.handle)
+    let mut model: ResNet = Arc::unwrap_or_clone(loaded.handle)
         .map(&mut DTypeMapper::new(old_float_type))
         .with_classes(CLASSES.len())
         .with_stochastic_drop_block(args.drop_block_prob)
@@ -362,7 +359,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
         model = model.freeze_layers();
     }
 
-    let host: Host<B> = Host {
+    let host: Host = Host {
         smoothing: args.smoothing,
         resnet: model,
     };
@@ -390,8 +387,8 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
     .expect("Config should be saved successfully");
 
     // Dataloaders
-    let batcher_train = ClassificationBatcher::<B>::new(device.clone());
-    let batcher_valid = ClassificationBatcher::<B::InnerBackend>::new(device.clone());
+    let batcher_train = ClassificationBatcher::new(device.clone());
+    let batcher_valid = ClassificationBatcher::</* TODO(burn 0.22 migration): B::InnerBackend has no drop-in replacement -- burn's optimizer system was redesigned (ModuleOptimizer + ParamGroup, see burn-book/src/building-blocks/optimizer.md); this file likely needs a rewrite against the new API rather than a substitution. See BREAKING_CHANGES.md #15. */ B::InnerBackend>::new(device.clone());
 
     let (train, valid) =
         ImageFolderDataset::planet_train_val_split(args.train_percentage, args.seed)?;
@@ -479,8 +476,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
                 LossMetric::new(),
                 // CudaMetric::new(), ??
                 LearningRateMetric::new(),
-            ))
-            .with_file_checkpointer(CompactRecorder::new())
+            )).with_default_checkpointers()
             .early_stopping(MetricEarlyStoppingStrategy::new(
                 &LossMetric::<B>::new(),
                 Aggregate::Mean,
@@ -499,8 +495,7 @@ pub fn train<B: AutodiffBackend>(args: &Args) -> anyhow::Result<()> {
 
         result
             .model
-            .resnet
-            .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+            .resnet.save_file(format!("{artifact_dir}/model"))
             .expect("Trained model should be saved successfully");
     }
     let elapsed = now.elapsed().as_secs();
@@ -526,6 +521,7 @@ impl MetricsRendererTraining for CustomRenderer {
     ) {
     }
 
+    /* TODO(burn 0.22 migration): render_train, render_valid, and render_test were removed. Move this code to TrainingProgressLogger or EvaluationProgressLogger. See BREAKING_CHANGES.md #34. */
     fn render_train(
         &mut self,
         item: TrainingProgress,
@@ -534,6 +530,7 @@ impl MetricsRendererTraining for CustomRenderer {
         dbg!(item);
     }
 
+    /* TODO(burn 0.22 migration): render_train, render_valid, and render_test were removed. Move this code to TrainingProgressLogger or EvaluationProgressLogger. See BREAKING_CHANGES.md #34. */
     fn render_valid(
         &mut self,
         item: TrainingProgress,
@@ -563,6 +560,7 @@ impl MetricsRendererEvaluation for CustomRenderer {
     ) {
     }
 
+    /* TODO(burn 0.22 migration): render_train, render_valid, and render_test were removed. Move this code to TrainingProgressLogger or EvaluationProgressLogger. See BREAKING_CHANGES.md #34. */
     fn render_test(
         &mut self,
         item: EvaluationProgress,
@@ -576,29 +574,29 @@ impl MetricsRendererEvaluation for CustomRenderer {
 pub struct Host<B: Backend> {
     pub smoothing: Option<f32>,
 
-    pub resnet: ResNet<B>,
+    pub resnet: ResNet,
 }
 
 pub trait MultiLabelClassification<B: Backend> {
     fn forward_classification(
         &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 2, Int>,
+        images: Tensor<4>,
+        targets: Tensor<2, Int>,
     ) -> MultiLabelClassificationOutput<B>;
 }
 
-impl<B: Backend> MultiLabelClassification<B> for Host<B> {
+impl<B: Backend> MultiLabelClassification<B> for Host {
     fn forward_classification(
         &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 2, Int>,
+        images: Tensor<4>,
+        targets: Tensor<2, Int>,
     ) -> MultiLabelClassificationOutput<B> {
         let device = images.device();
         let output = self.resnet.forward(images);
 
         let mut loss_cfg = BinaryCrossEntropyLossConfig::new().with_logits(true);
 
-        if B::ad_enabled(&device) {
+        if device.is_autodiff() {
             loss_cfg = loss_cfg.with_smoothing(self.smoothing);
         }
 
@@ -610,8 +608,8 @@ impl<B: Backend> MultiLabelClassification<B> for Host<B> {
     }
 }
 
-impl<B: AutodiffBackend> TrainStep for Host<B> {
-    type Input = ClassificationBatch<B>;
+impl<B: AutodiffBackend> TrainStep for Host {
+    type Input = ClassificationBatch;
     type Output = MultiLabelClassificationOutput<B>;
 
     fn step(
@@ -624,8 +622,8 @@ impl<B: AutodiffBackend> TrainStep for Host<B> {
     }
 }
 
-impl<B: Backend> InferenceStep for Host<B> {
-    type Input = ClassificationBatch<B>;
+impl<B: Backend> InferenceStep for Host {
+    type Input = ClassificationBatch;
     type Output = MultiLabelClassificationOutput<B>;
 
     fn step(

@@ -49,7 +49,6 @@ use bunsen::{
     },
     ops::signal::perceptive_audio::PerceptiveAudioConverterMeta,
 };
-use burn::prelude::Backend;
 
 /// Where fetched weights live, and whether fetching is allowed.
 #[derive(clap::Args, Debug)]
@@ -243,10 +242,10 @@ impl WhisperDriverArgs {
     /// `OpenAI`'s checkpoints are fp16 while the mel front end works in the
     /// backend's float, but the model casts at its own edges — mels in,
     /// logits out — so nothing here has to re-type it.
-    pub fn load_bundle<B: Backend>(
+    pub fn load_bundle(
         &self,
         cache: &PretrainedCache,
-        device: &B::Device,
+        device: &Device,
     ) -> BunsenResult<Arc<WhisperBundle<B>>> {
         let factory = default_whisper_factory()?;
         let mut model = resolve_model(&factory, &self.model, cache)?;
@@ -278,9 +277,9 @@ impl WhisperDriverArgs {
     /// it and every push has the same shape: the front end, the gate and
     /// the autotuned kernels behind them see one size, not a drift of
     /// remainders.
-    pub fn chunk_samples<B: Backend>(
+    pub fn chunk_samples(
         &self,
-        driver: &WhisperStreamDriver<B>,
+        driver: &WhisperStreamDriver,
         default_ms: usize,
     ) -> usize {
         let want = (self.chunk_ms.unwrap_or(default_ms) * driver.sample_rate() / 1000).max(1);
@@ -295,11 +294,11 @@ impl WhisperDriverArgs {
     ///
     /// `default_preset` is the command's emission preset, for when
     /// `--preset` is omitted.
-    pub fn init_driver<B: Backend>(
+    pub fn init_driver(
         &self,
-        device: &B::Device,
+        device: &Device,
         default_preset: PresetEmissionPolicy,
-    ) -> BunsenResult<WhisperStreamDriver<B>> {
+    ) -> BunsenResult<WhisperStreamDriver> {
         let preset = self.preset(default_preset);
         let cache = self.init_cache()?;
         let bundle = self.load_bundle::<B>(&cache, device)?;
@@ -324,7 +323,7 @@ impl WhisperDriverArgs {
             WhisperFallbackConfig::new()
         };
 
-        let mut driver: WhisperStreamDriver<B> = WhisperStreamDriverConfig::new()
+        let mut driver: WhisperStreamDriver = WhisperStreamDriverConfig::new()
             .with_language(language)
             .with_task(self.task)
             .with_timestamps(self.timestamps)
@@ -359,9 +358,9 @@ impl WhisperDriverArgs {
     /// maximum as the mel clamp reference. A source that knows its capture
     /// times anchors them through
     /// [`anchor_write_read`](TranscriptStream::anchor_write_read).
-    pub fn open_stream<B: Backend>(
+    pub fn open_stream(
         &self,
-        driver: &WhisperStreamDriver<B>,
+        driver: &WhisperStreamDriver,
     ) -> BunsenResult<TranscriptStream<B>> {
         let ctx = driver.new_context(
             StreamClock::uniform(driver.sample_rate()),
@@ -385,15 +384,15 @@ impl WhisperDriverArgs {
 /// [`write_read`](Self::write_read) or
 /// [`anchor_write_read`](Self::anchor_write_read); ended with
 /// [`end_read`](Self::end_read).
-pub struct TranscriptStream<B: Backend> {
-    ctx: WhisperStreamContext<B>,
+pub struct TranscriptStream {
+    ctx: WhisperStreamContext,
     detects_language: bool,
     announced: bool,
     ids: bool,
     last_end: f64,
 }
 
-impl<B: Backend> TranscriptStream<B> {
+impl TranscriptStream<B> {
     /// Pushes samples at the model's rate, and reports what came out.
     pub fn write_read(
         &mut self,

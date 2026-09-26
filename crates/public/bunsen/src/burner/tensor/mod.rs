@@ -46,7 +46,7 @@
 //! ## Free Functions
 //!
 //! [`backend_float_dtype`] — the backend's default float `DType`
-//! (`B::FloatElem`'s): what an undtyped `Tensor<B, D>` gets, and so the
+//! (the backend float element type): what an undtyped `Tensor<D>` gets, and so the
 //! dtype a module's interface speaks when its parameters were loaded at
 //! some other precision.
 //!

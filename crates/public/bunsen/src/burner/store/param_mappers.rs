@@ -15,8 +15,7 @@
 use burn::{
     Tensor,
     module::Param,
-    prelude::Backend,
-};
+    };
 
 /// Repairs a 2-D weight mangled by `burn-store`'s stride-blind `PyTorch` read.
 ///
@@ -46,24 +45,24 @@ use burn::{
 /// let mut attn = mha_config.init(device);
 /// attn.query.weight = repair_pytorch_strided_weight(attn.query.weight);
 /// ```
-pub fn repair_pytorch_strided_weight<B: Backend>(
-    param: Param<Tensor<B, 2>>
-) -> Param<Tensor<B, 2>> {
+pub fn repair_pytorch_strided_weight(
+    param: Param<Tensor<2>>
+) -> Param<Tensor<2>> {
     param
         // Coming from the store: undo the mangling.
-        .load_mapper(|tensor: Tensor<B, 2>| {
-            B::sync(&tensor.device()).unwrap();
+        .load_mapper(|tensor: Tensor<2>| {
+            tensor.device().sync().unwrap();
             let dims = tensor.dims();
             let tensor = tensor.transpose().reshape(dims);
-            B::sync(&tensor.device()).unwrap();
+            tensor.device().sync().unwrap();
             tensor
         })
         // Going back out: re-apply it, so a round trip is the identity.
-        .save_mapper(|tensor: Tensor<B, 2>| {
-            B::sync(&tensor.device()).unwrap();
+        .save_mapper(|tensor: Tensor<2>| {
+            tensor.device().sync().unwrap();
             let [rows, cols] = tensor.dims();
             let tensor = tensor.reshape([cols, rows]).transpose();
-            B::sync(&tensor.device()).unwrap();
+            tensor.device().sync().unwrap();
             tensor
         })
 }
@@ -75,8 +74,7 @@ mod tests {
         prelude::TensorData,
         tensor::{
             Tolerance,
-            backend::BackendTypes,
-        },
+            },
     };
 
     use super::*;
@@ -89,7 +87,7 @@ mod tests {
     };
 
     type B = CpuBackend;
-    type F = <B as BackendTypes>::FloatElem;
+    type F = f32; /* TODO(burn 0.22 migration): the backend's compile-time float-element associated type is gone -- hardcoded to f32 for this test helper; adjust if this specific test needs a different working dtype. See BREAKING_CHANGES.md #14b. */
 
     /// The mapper must leave the live parameter alone — it only changes what
     /// crosses the store boundary.
@@ -116,7 +114,7 @@ mod tests {
         let device = default_device();
 
         // A store-orientation tensor: `[d_output, d_input]`.
-        let stored: Tensor<B, 2> = Tensor::from_data(
+        let stored: Tensor<2> = Tensor::from_data(
             TensorData::new((0..15).map(|v| v as f64).collect::<Vec<_>>(), [5, 3]),
             &device,
         );
