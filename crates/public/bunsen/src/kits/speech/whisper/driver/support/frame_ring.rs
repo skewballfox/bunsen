@@ -1,5 +1,10 @@
 //! A sliding buffer of log-mel frames.
 
+use std::{
+    iter,
+    marker::PhantomData,
+};
+
 use burn::Tensor;
 
 /// The frames of one stream from the seek pointer onward, in a buffer that is
@@ -93,10 +98,11 @@ impl FrameRing {
         self.len -= count.min(self.len);
     }
 
-    /// The live frames `start .. start + count`: `[1, count, n_mels]`.
+    /// The live frames `start .. start + count`, joined: `[1, count, n_mels]`.
     ///
-    /// A view of the buffer, not a copy. Drop it before the next
-    /// [`push`](Self::push), or that push copies the buffer.
+    /// [`frame_window`](Self::frame_window) as one tensor. While the window
+    /// is one piece, this is a view of the buffer, not a copy. Drop it before
+    /// the next [`push`](Self::push), or that push copies the buffer.
     ///
     /// # Panics
     /// If the range is not inside the live frames.
@@ -105,6 +111,19 @@ impl FrameRing {
         start: usize,
         count: usize,
     ) -> Tensor<3> {
+        self.frame_window(start, count).into_tensor()
+    }
+
+    /// The live frames `start .. start + count`, as the pieces of the buffer
+    /// they lie in.
+    ///
+    /// # Panics
+    /// If the range is not inside the live frames.
+    pub(crate) fn frame_window(
+        &self,
+        start: usize,
+        count: usize,
+    ) -> FrameWindow<'_> {
         assert!(
             start + count <= self.len,
             "window {start}..{} is past the {} live frames",
@@ -112,11 +131,13 @@ impl FrameRing {
             self.len,
         );
         let at = self.head + start;
-        self.buf
+        let piece = self
+            .buf
             .as_ref()
             .expect("live frames have a buffer")
             .clone()
-            .slice_dim(1, at..at + count)
+            .slice_dim(1, at..at + count);
+        FrameWindow::new(piece, Vec::new())
     }
 
     /// Moves the live frames to the start of a new buffer of `capacity`
@@ -136,6 +157,62 @@ impl FrameRing {
             _ => fresh,
         });
         self.head = 0;
+    }
+}
+
+/// Some live frames of a [`FrameRing`]: the pieces of the buffer they lie
+/// in, in order, each `[1, frames, n_mels]`.
+///
+/// The pieces agree in every dim but the frames, so they join along dim 1.
+/// The ring never wraps today, so there is one piece; a caller that walks
+/// [`iter`](Self::iter) rather than taking
+/// [`into_tensor`](Self::into_tensor) keeps working if it ever does. The
+/// window borrows the ring, so nothing can push to the ring while it lives.
+#[derive(Clone, Debug)]
+pub(crate) struct FrameWindow<'a> {
+    /// The first piece.
+    first: Tensor<3>,
+
+    /// The pieces after the first; empty, so unallocated, for one piece.
+    rest: Vec<Tensor<3>>,
+
+    ring: PhantomData<&'a FrameRing>,
+}
+
+impl FrameWindow<'_> {
+    /// # Panics
+    /// If a piece disagrees with the first in a dim other than the frames.
+    fn new(
+        first: Tensor<3>,
+        rest: Vec<Tensor<3>>,
+    ) -> Self {
+        let [batch, _, n_mels] = first.dims();
+        for piece in &rest {
+            let [b, _, m] = piece.dims();
+            assert!(
+                b == batch && m == n_mels,
+                "piece [{b}, _, {m}] does not join [{batch}, _, {n_mels}]",
+            );
+        }
+        Self {
+            first,
+            rest,
+            ring: PhantomData,
+        }
+    }
+
+    /// The pieces, in order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Tensor<3>> {
+        iter::once(&self.first).chain(&self.rest)
+    }
+
+    /// The pieces joined along dim 1. One piece is returned as it is, with
+    /// no copy; more are concatenated.
+    pub(crate) fn into_tensor(self) -> Tensor<3> {
+        if self.rest.is_empty() {
+            return self.first;
+        }
+        Tensor::cat(self.iter().cloned().collect(), 1)
     }
 }
 
@@ -214,6 +291,30 @@ mod test {
 
         ring.drop_back(5);
         assert_eq!(ring.len(), 0);
+    }
+
+    #[test]
+    fn test_frame_window_one_piece() {
+        let mut ring = FrameRing::new(4);
+        ring.push(frames(0, 3));
+
+        let window = ring.frame_window(1, 2);
+        assert_eq!(window.iter().count(), 1);
+        assert_eq!(indices(window.into_tensor()), vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn test_frame_window_joins_pieces() {
+        let window = FrameWindow::new(frames(0, 2), vec![frames(2, 1), frames(3, 2)]);
+        assert_eq!(window.iter().count(), 3);
+        assert_eq!(indices(window.into_tensor()), vec![0.0, 1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "does not join")]
+    fn test_frame_window_rejects_mismatched_pieces() {
+        let other = Tensor::<3>::zeros([1, 2, 3], &cpu_device());
+        let _ = FrameWindow::new(frames(0, 2), vec![other]);
     }
 
     #[test]
