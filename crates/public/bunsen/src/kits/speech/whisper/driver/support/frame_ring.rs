@@ -1,9 +1,6 @@
 //! A sliding buffer of log-mel frames.
 
-use std::{
-    iter,
-    marker::PhantomData,
-};
+use std::marker::PhantomData;
 
 use burn::Tensor;
 
@@ -137,7 +134,7 @@ impl FrameRing {
             .expect("live frames have a buffer")
             .clone()
             .slice_dim(1, at..at + count);
-        FrameWindow::new(piece, Vec::new())
+        FrameWindow::new(vec![piece])
     }
 
     /// Moves the live frames to the start of a new buffer of `capacity`
@@ -170,24 +167,22 @@ impl FrameRing {
 /// window borrows the ring, so nothing can push to the ring while it lives.
 #[derive(Clone, Debug)]
 pub(crate) struct FrameWindow<'a> {
-    /// The first piece.
-    first: Tensor<3>,
-
-    /// The pieces after the first; empty, so unallocated, for one piece.
-    rest: Vec<Tensor<3>>,
+    /// The pieces, in order; never empty.
+    pieces: Vec<Tensor<3>>,
 
     ring: PhantomData<&'a FrameRing>,
 }
 
 impl FrameWindow<'_> {
     /// # Panics
-    /// If a piece disagrees with the first in a dim other than the frames.
-    fn new(
-        first: Tensor<3>,
-        rest: Vec<Tensor<3>>,
-    ) -> Self {
-        let [batch, _, n_mels] = first.dims();
-        for piece in &rest {
+    /// If there are no pieces, or a piece disagrees with the first in a dim
+    /// other than the frames.
+    fn new(pieces: Vec<Tensor<3>>) -> Self {
+        let [batch, _, n_mels] = pieces
+            .first()
+            .expect("a window has at least one piece")
+            .dims();
+        for piece in &pieces[1..] {
             let [b, _, m] = piece.dims();
             assert!(
                 b == batch && m == n_mels,
@@ -195,22 +190,21 @@ impl FrameWindow<'_> {
             );
         }
         Self {
-            first,
-            rest,
+            pieces,
             ring: PhantomData,
         }
     }
 
     /// The pieces, in order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Tensor<3>> {
-        iter::once(&self.first).chain(&self.rest)
+        self.pieces.iter()
     }
 
     /// The pieces joined along dim 1. One piece is returned as it is, with
     /// no copy; more are concatenated.
-    pub(crate) fn into_tensor(self) -> Tensor<3> {
-        if self.rest.is_empty() {
-            return self.first;
+    pub(crate) fn into_tensor(mut self) -> Tensor<3> {
+        if self.pieces.len() == 1 {
+            return self.pieces.pop().expect("one piece");
         }
         Tensor::cat(self.iter().cloned().collect(), 1)
     }
@@ -305,7 +299,7 @@ mod test {
 
     #[test]
     fn test_frame_window_joins_pieces() {
-        let window = FrameWindow::new(frames(0, 2), vec![frames(2, 1), frames(3, 2)]);
+        let window = FrameWindow::new(vec![frames(0, 2), frames(2, 1), frames(3, 2)]);
         assert_eq!(window.iter().count(), 3);
         assert_eq!(indices(window.into_tensor()), vec![0.0, 1.0, 2.0, 3.0, 4.0]);
     }
@@ -314,7 +308,7 @@ mod test {
     #[should_panic(expected = "does not join")]
     fn test_frame_window_rejects_mismatched_pieces() {
         let other = Tensor::<3>::zeros([1, 2, 3], &cpu_device());
-        let _ = FrameWindow::new(frames(0, 2), vec![other]);
+        let _ = FrameWindow::new(vec![frames(0, 2), other]);
     }
 
     #[test]
