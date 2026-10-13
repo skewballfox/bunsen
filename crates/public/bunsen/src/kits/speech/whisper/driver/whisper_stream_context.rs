@@ -35,7 +35,10 @@ use crate::{
                 StreamClock,
                 VoiceActivityFilter,
                 WhisperStreamDriver,
-                support::segments::split_window,
+                support::{
+                    frame_ring::FrameRing,
+                    segments::split_window,
+                },
                 transcript::{
                     TranscriptEvent,
                     TranscriptSegment,
@@ -185,9 +188,8 @@ pub struct WhisperStreamContext {
     /// The mel front end's streaming state; `None` once flushed.
     audio_conversion_ctx: Option<PerceptiveAudioConversionContext>,
 
-    /// `[1, frames, n_mels]` log-mels from `origin` onward; `None`
-    /// when empty.
-    frames: Option<Tensor<3>>,
+    /// The log-mels from `origin` onward.
+    frames: FrameRing,
 
     /// Samples not yet a whole hop.
     staging: Vec<f32>,
@@ -293,10 +295,13 @@ impl WhisperStreamContext {
         };
 
         let language = driver.config().language.clone();
+        // Two windows: a full window can wait for its decode while the
+        // next one fills, before the ring compacts.
+        let frames = FrameRing::new(2 * driver.window_frames());
         Self {
             driver,
             audio_conversion_ctx: Some(audio_conversion_ctx),
-            frames: None,
+            frames,
             staging: Vec::new(),
             samples_seen: 0,
             origin: 0,
@@ -362,7 +367,7 @@ impl WhisperStreamContext {
     }
 
     fn ring_len(&self) -> usize {
-        self.frames.as_ref().map_or(0, |f| f.dims()[1])
+        self.frames.len()
     }
 
     fn hop(&self) -> usize {
@@ -480,10 +485,7 @@ impl WhisperStreamContext {
 
         // Whisper's `stft[..., :-1]`: the stream's last frame is the end
         // padding's, and goes.
-        if let Some(frames) = self.frames.take() {
-            let n = frames.dims()[1];
-            self.frames = (n > 1).then(|| frames.slice_dim(1, 0..n as isize - 1));
-        }
+        self.frames.drop_back(1);
 
         self.run_vad(true);
         Ok(())
@@ -523,7 +525,9 @@ impl WhisperStreamContext {
             return Ok(());
         }
 
-        let chunk: Vec<f64> = self.staging.drain(..whole).map(f64::from).collect();
+        // `from_data` converts to the device's float dtype, so the samples
+        // go up as they are.
+        let chunk: Vec<f32> = self.staging.drain(..whole).collect();
         let device = self.driver.devices()[0].clone();
         let waves: Tensor<2> = Tensor::from_data(TensorData::new(chunk, [1, whole]), &device);
 
@@ -545,10 +549,7 @@ impl WhisperStreamContext {
         new: Tensor<3>,
     ) {
         self.clamp.observe(new.clone());
-        self.frames = Some(match self.frames.take() {
-            Some(ring) => Tensor::cat(vec![ring, new], 1),
-            None => new,
-        });
+        self.frames.push(new);
     }
 
     /// Runs Silero over every whole chunk in the VAD's staging, steps the
@@ -683,10 +684,7 @@ impl WhisperStreamContext {
         &self,
         unit: &Due,
     ) -> Tensor<3> {
-        let ring = self.frames.as_ref().expect("due frames exist");
-        let start = (unit.start - self.origin) as isize;
-        ring.clone()
-            .slice_dim(1, start..start + unit.count as isize)
+        self.frames.window(unit.start - self.origin, unit.count)
     }
 
     // ---- decoding ----------------------------------------------------
@@ -1002,11 +1000,7 @@ impl WhisperStreamContext {
 
     /// Retains the ring from the seek pointer onward, nothing before it.
     fn drop_before_seek(&mut self) {
-        let drop = (self.seek - self.origin) as isize;
-        self.frames = self.frames.take().and_then(|ring| {
-            let n = ring.dims()[1] as isize;
-            (drop < n).then(|| ring.slice_dim(1, drop..n))
-        });
+        self.frames.drop_front(self.seek - self.origin);
         self.origin = self.seek;
     }
 }
