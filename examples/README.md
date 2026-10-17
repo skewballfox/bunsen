@@ -3,6 +3,8 @@
 Runnable programs, one or more per kit or system. They are not published, and CI builds all of them. The book's
 [Examples](https://zspacelabs.ai/bunsen/book/organization/examples.html) page says what each one shows and how to
 choose a device; each example's own README says how to run it.
+[`bunsen-asr`](../crates/public/bunsen-asr), speech to text across model families, is a published binary rather
+than an example.
 
 - [`conway`](conway): Conway's Game of Life in 2D and 3D, with `visual` and `benchmark` subcommands.
   Uses `kits::sims::conway`, `support::geometry::GridShape2D` and `zspace::ravel_dims`.
@@ -14,10 +16,6 @@ choose a device; each example's own README says how to run it.
 - [`resnet_tiny`](resnet_tiny): trains a ResNet on CINIC-10 through a firehose image pipeline, optionally from a
   pretrained checkpoint. Uses `kits::images::resnet`, `data::pretrained::PretrainedCache`, `burner::module`
   (`ToStructureConfig`, `ModuleInit`, `DTypeMapper`), `bunsen-firehose` and `bunsen-firehose-image`.
-- [`bunsen-asr`](bunsen-asr): speech to text, one subcommand per model family (`parakeet`, `qwen3-asr`,
-  `whisper`), each with its own `list` and `transcribe`; named models (`FermionResearch`'s Phonon builds by
-  default) and `hf:org/repo`. Uses `kits::speech::{parakeet, qwen3_asr, whisper}` and their `pretrained`
-  factories, `kits::speech::silero_vad`, and `data::pretrained`.
 - [`swin_tiny`](swin_tiny): trains a Swin Transformer V2 on CINIC-10 with DropBlock, sharing `resnet_tiny`'s
   pipeline. Uses `kits::images::swin::v2`, `blocks::images::drop::drop_block`, `bunsen-firehose` and
   `bunsen-firehose-image`.
@@ -25,6 +23,3 @@ choose a device; each example's own README says how to run it.
   selected by module-tree reflection. Uses `kits::gpts::nanochat` and its `datasets`, `data::shards`,
   `data::cache::BunsenDiskCache`, `burner::module::reflection::XmlModuleTree`, `burner::optim` and
   `bunsen-arrow-dataloaders`.
-- [`whisper-cli`](whisper-cli): transcribes a file or the microphone through the Whisper stream driver, with the
-  model named as `openai-whisper` names it, and a `models` subcommand that lists, fetches and inspects models.
-  Uses `kits::speech::whisper` (`pretrained`, `driver`), `kits::speech::silero_vad` and `data::pretrained`.

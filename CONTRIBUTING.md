@@ -16,7 +16,7 @@ open an [issue](https://github.com/zspacelabs/bunsen/issues) first. Code and doc
 - **Nightly `rustfmt`.** [`rustfmt.toml`](rustfmt.toml) uses unstable options, so format with `cargo +nightly fmt`.
   Stable `rustfmt` ignores those options and reformats the whole tree.
 - **ALSA headers, on Linux:** `libasound2-dev` on Debian and Ubuntu (`alsa-lib-devel` or `alsa-lib` elsewhere).
-  `whisper-cli live` captures audio through `cpal`, which links ALSA, and clippy and the tests build every workspace
+  `bunsen-asr live` captures audio through `cpal`, which links ALSA, and clippy and the tests build every workspace
   member.
 - **[cargo-make](https://github.com/sagiegurari/cargo-make)**, which runs the tasks in [`Makefile.toml`](Makefile.toml).
 - **The mdbook tools**, for the book: `cargo make setup` installs mdbook and its plugins at the versions CI uses.
@@ -101,16 +101,22 @@ hand. Configuration lives in [`release-plz.toml`](release-plz.toml); the automat
 
 ### What gets released
 
-The seven published crates, the ones in `crates/public/`, are versioned in **lockstep**: they share one version
+The ten published crates, in `crates/public/`, are versioned in **lockstep**: they share one version
 (`version_group = "bunsen"` in `release-plz.toml`, matching `version.workspace = true` in the root `Cargo.toml`):
 
 - `bunsen`
 - `bunsen-contracts-macros`
+- `bunsen-fetch`
 - `bunsen-firehose`
 - `bunsen-firehose-image`
 - `bunsen-arrow-dataloaders`
 - `bunsen-bundled-silero`
 - `bunsen-bundled-whisper`
+- `bunsen-app`
+- `bunsen-asr` (a binary: `cargo install bunsen-asr`)
+
+`bunsen-bundled-parakeet` and `bunsen-bundled-qwen3-asr` live in `crates/public/` too, but are not published
+(`publish = false`): they fetch the checkpoints the validation crates check against.
 
 Nothing else is released: release-plz is opt-in (`release = false` for the workspace, `release = true` per crate), so
 the examples and the `crates/dev` and `crates/validation` crates stay out.

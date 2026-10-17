@@ -1,4 +1,9 @@
+//! `bunsen-asr <family> live`.
 use std::{
+    io::{
+        IsTerminal,
+        Write,
+    },
     sync::{
         Arc,
         atomic::{
@@ -17,15 +22,20 @@ use std::{
 };
 
 use bunsen::{
+    data::pretrained::PretrainedCache,
     errors::{
         BunsenError,
         BunsenResult,
+        ResultContext,
     },
-    kits::speech::asr_driver::PresetEmissionPolicy,
+    kits::speech::asr_driver::TranscriptEvent,
 };
-use bunsen_app::logging::{
-    LogArgs,
-    LogLevelNum,
+use bunsen_app::{
+    cache::WeightsCacheArgs,
+    logging::{
+        LogArgs,
+        LogLevelNum,
+    },
 };
 use cpal::{
     Data,
@@ -47,63 +57,79 @@ use cpal::{
 };
 
 use crate::{
-    resample::Resampler,
-    whisper_clap::{
-        TranscriptStream,
-        WhisperDriverArgs,
+    args::DeviceArgs,
+    driver::{
+        Driver,
+        Stream,
     },
+    family::Family,
+    resample::Resampler,
+    stream::Preset,
+    transcribe_cmd::FamilyFlags,
 };
-
-/// Milliseconds of audio per push when `--chunk-ms` is omitted: the
-/// capture callbacks, which arrive every few milliseconds, are batched to
-/// this before the front end sees them.
-const CHUNK_MS: usize = 250;
-
-/// The emission preset when `--preset` is omitted: a microphone has no
-/// end, so each speech region is decoded as it closes. Committed lines are
-/// final; with timestamps on, the unfinished tail of a decode also appears
-/// as a draft.
-const PRESET: PresetEmissionPolicy = PresetEmissionPolicy::Conservative;
 
 /// How long the main loop waits for a capture callback before checking
 /// whether it has been asked to stop.
 const POLL: Duration = Duration::from_millis(100);
 
-/// Transcribes the microphone, as it speaks, through the same stream
-/// driver `transcribe` feeds a file into.
+/// The most of a draft shown on a terminal: its end, where it changes.
+const DRAFT_CHARS: usize = 100;
+
+/// Transcribes the microphone, as it speaks, through the family's stream
+/// driver.
 ///
-/// The host's default input device is opened at the model's rate when it
-/// offers that, and at its own default rate otherwise, resampled here. The
-/// capture callback hands its buffers, downmixed to mono, to the main
-/// thread, which batches them into pushes, anchors the stream's clock at
-/// each push's capture time, and prints what the driver emits. Ctrl-C, or
-/// `--seconds`, ends the stream cleanly: the tail past the last endpoint
-/// is decoded before the process exits.
-///
-/// Under the default `conservative` preset a line appears when a speech
-/// region closes; `--preset responsive` adds a draft of the region so far
-/// every 600 ms of speech.
+/// The host's default input device (or `--input-device`) is opened at the
+/// model's rate when it offers that, and at its own default rate
+/// otherwise, resampled here. The capture callback hands its buffers,
+/// downmixed to mono, to the main thread, which batches them into pushes,
+/// anchors the stream's clock at each push's capture time, and prints what
+/// the driver emits: each decode's committed text as a line on stdout, and,
+/// under `--preset responsive`, a draft of the speech so far on stderr,
+/// redrawn in place on a terminal. Ctrl-C, or `--seconds`, ends the stream
+/// cleanly: the speech past the last commit is decoded before the process
+/// exits.
 #[derive(clap::Args, Debug)]
-pub struct LiveCmd {
+pub struct LiveCmd<F: clap::Args> {
     #[clap(flatten)]
     pub logging: LogArgs,
 
+    /// The model, by name: `list` shows them; the family's default when
+    /// omitted. Whisper also takes a checkpoint's path.
+    #[arg(long)]
+    pub model: Option<String>,
+
     #[clap(flatten)]
-    pub whisper: WhisperDriverArgs,
+    pub cache: WeightsCacheArgs,
+
+    #[clap(flatten)]
+    pub device: DeviceArgs,
+
+    /// When to decode: a microphone has no end, so by default each speech
+    /// region is decoded as it closes.
+    #[arg(long, value_enum, default_value_t = Preset::Conservative)]
+    pub preset: Preset,
+
+    /// Milliseconds of audio per push: the capture callbacks, which arrive
+    /// every few milliseconds, are batched to this.
+    #[arg(long, default_value_t = 250)]
+    pub chunk_ms: usize,
+
+    #[clap(flatten)]
+    pub flags: F,
 
     /// The input device, by a case-insensitive substring of its id or its
     /// name (see `--list-devices`); the host's default input device when
     /// omitted.
     #[arg(long)]
-    input_device: Option<String>,
+    pub input_device: Option<String>,
 
     /// List the input devices, id and name, and exit. Loads nothing.
     #[arg(long)]
-    list_devices: bool,
+    pub list_devices: bool,
 
     /// Stop after this many seconds of audio; on Ctrl-C when omitted.
     #[arg(long)]
-    seconds: Option<f64>,
+    pub seconds: Option<f64>,
 }
 
 /// One capture callback's audio: mono at the device's rate, and when its
@@ -115,31 +141,38 @@ struct Block {
     samples: Vec<f32>,
 }
 
-impl LiveCmd {
-    pub fn run(&self) -> BunsenResult<()> {
+impl<F: clap::Args + FamilyFlags> LiveCmd<F> {
+    pub fn run(
+        &self,
+        family: Family,
+    ) -> BunsenResult<()> {
         self.logging.init(Some(LogLevelNum::Warn))?;
-
         let host = cpal::default_host();
         if self.list_devices {
             return list_devices(&host);
         }
-        let device = self.pick_device(&host)?;
-        let device_name = device_name(&device);
+        let input = self.pick_device(&host)?;
+        let input_name = device_name(&input);
 
-        let compute = self.whisper.device()?;
-        let driver = self.whisper.init_driver(&compute, PRESET)?;
+        let device = self.device.device()?;
+        // The options come from the command line.
+        let cache =
+            PretrainedCache::new(self.flags.cache_options(self.cache.options())).as_policy()?;
+        let model = self.model.as_deref().unwrap_or(family.default_model());
+        let loaded = family.load(model, &self.flags, &cache, &device)?;
+        let driver = Driver::build(loaded, &self.flags, self.preset, &cache, &device)?;
         let model_rate = driver.sample_rate();
-        let chunk = self.whisper.chunk_samples(&driver, CHUNK_MS);
+        let chunk = driver.push_samples(self.chunk_ms);
         log::debug!(
             "push: {chunk} samples ({:.0} ms)",
             chunk as f64 * 1000.0 / model_rate as f64
         );
 
-        let supported = pick_config(&device, model_rate as u32)?;
+        let supported = pick_config(&input, model_rate as u32)?;
         let capture_rate = supported.sample_rate() as usize;
         let mut resampler = Resampler::new(capture_rate, model_rate);
         log::info!(
-            "capture: {device_name}: {} ch, {capture_rate} Hz, {}{}",
+            "capture: {input_name}: {} ch, {capture_rate} Hz, {}{}",
             supported.channels(),
             supported.sample_format(),
             if resampler.is_identity() {
@@ -158,15 +191,16 @@ impl LiveCmd {
         }
 
         let (tx, rx) = mpsc::channel::<Block>();
-        let stream = build_stream(&device, &supported, tx)?;
-        let mut transcript = self.whisper.open_stream(&driver)?;
+        let capture = build_stream(&input, &supported, tx)?;
+        let mut stream = driver.open()?;
+        let mut printer = Printer::new();
         let limit = self.seconds.map(|s| (s * capture_rate as f64) as usize);
 
-        stream.play().map_err(|e| {
-            BunsenError::sys(format!("could not start capture on {device_name}")).with_cause(e)
+        capture.play().map_err(|e| {
+            BunsenError::sys(format!("could not start capture on {input_name}")).with_cause(e)
         })?;
         eprintln!(
-            "listening on {device_name}; {}",
+            "listening on {input_name}; {}",
             match self.seconds {
                 Some(s) => format!("stopping after {s} s"),
                 None => "Ctrl-C to stop".to_string(),
@@ -186,17 +220,17 @@ impl LiveCmd {
                 break;
             }
             let block = match rx.recv_timeout(POLL) {
-                Ok(block) => block,
+                Ok(block) => take(block, &mut captured, limit),
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => break,
             };
-            captured += block.samples.len();
             if pending.is_empty() {
                 pending_time = block.time;
             }
             resampler.process(&block.samples, &mut pending);
             while pending.len() >= chunk {
-                push(&mut transcript, &pending[..chunk], pending_time)?;
+                let events = push(&mut stream, &pending[..chunk], pending_time)?;
+                printer.report(&stream, &events);
                 pending.drain(..chunk);
                 // The remainder is contiguous with what was pushed, so its
                 // first sample's time follows at the rate.
@@ -207,26 +241,31 @@ impl LiveCmd {
         // Stop capturing before the flush, so the tail is what was heard
         // before the stop; the callback's sender goes with the stream, so
         // the drain below ends.
-        let _ = stream.pause();
-        drop(stream);
+        let _ = capture.pause();
+        drop(capture);
         for block in rx.try_iter() {
-            captured += block.samples.len();
+            if limit.is_some_and(|n| captured >= n) {
+                break;
+            }
+            let block = take(block, &mut captured, limit);
             if pending.is_empty() {
                 pending_time = block.time;
             }
             resampler.process(&block.samples, &mut pending);
         }
         if !pending.is_empty() {
-            push(&mut transcript, &pending, pending_time)?;
+            let events = push(&mut stream, &pending, pending_time)?;
+            printer.report(&stream, &events);
         }
-        transcript.end_read()?;
+        let events = stream.end_read()?;
+        printer.report(&stream, &events);
+        printer.clear_draft();
 
-        let elapsed = started.elapsed();
         log::info!(
             "captured: {:.1} s of audio in {:.1?}; {} samples pushed",
             captured as f64 / capture_rate as f64,
-            elapsed,
-            transcript.samples_seen(),
+            started.elapsed(),
+            stream.samples_seen(),
         );
         Ok(())
     }
@@ -258,6 +297,117 @@ impl LiveCmd {
     }
 }
 
+/// `block`, cut to what is left of `limit` samples, counted into
+/// `captured`: `--seconds` is audio taken, however far capture ran ahead
+/// of the decode.
+fn take(
+    mut block: Block,
+    captured: &mut usize,
+    limit: Option<usize>,
+) -> Block {
+    if let Some(n) = limit {
+        block.samples.truncate(n.saturating_sub(*captured));
+    }
+    *captured += block.samples.len();
+    block
+}
+
+/// Pushes `samples` as one block, anchored at `time` when the host gave
+/// one.
+fn push(
+    stream: &mut Stream,
+    samples: &[f32],
+    time: Option<f64>,
+) -> BunsenResult<Vec<TranscriptEvent>> {
+    log::trace!(
+        "push: {} samples{}",
+        samples.len(),
+        time.map(|t| format!(" captured at {t:.3} s"))
+            .unwrap_or_default()
+    );
+    match time {
+        Some(time) => stream.anchor_write_read(time, samples),
+        None => stream.write_read(samples),
+    }
+}
+
+/// Prints what a stream emits: each decode's committed text as one line on
+/// stdout (Parakeet commits a segment per word, so a decode's words share a
+/// line); the latest draft on stderr, redrawn in place on a terminal and a
+/// line of its own, marked `~`, otherwise.
+struct Printer {
+    terminal: bool,
+    draft_shown: bool,
+    announced: bool,
+}
+
+impl Printer {
+    fn new() -> Self {
+        Self {
+            terminal: std::io::stderr().is_terminal(),
+            draft_shown: false,
+            announced: false,
+        }
+    }
+
+    fn report(
+        &mut self,
+        stream: &Stream,
+        events: &[TranscriptEvent],
+    ) {
+        if !self.announced
+            && let Some(language) = stream.language()
+        {
+            log::info!("language: {language}");
+            self.announced = true;
+        }
+        let committed: Vec<&TranscriptEvent> = events.iter().filter(|e| e.is_committed()).collect();
+        let text: Vec<&str> = committed
+            .iter()
+            .filter_map(|e| e.segment().text.as_deref().map(str::trim))
+            .filter(|t| !t.is_empty())
+            .collect();
+        if let (Some(first), Some(last)) = (committed.first(), committed.last()) {
+            log::debug!(
+                "[{:>8.2} --> {:>8.2}]",
+                first.segment().start,
+                last.segment().end
+            );
+        }
+        if !text.is_empty() {
+            self.clear_draft();
+            println!("{}", text.join(" "));
+        }
+        if let Some(draft) = events.iter().rev().find(|e| !e.is_committed()) {
+            self.show_draft(draft.segment().text.as_deref().unwrap_or("").trim());
+        }
+    }
+
+    fn show_draft(
+        &mut self,
+        text: &str,
+    ) {
+        if !self.terminal {
+            eprintln!("~ {text}");
+            return;
+        }
+        let skip = text.chars().count().saturating_sub(DRAFT_CHARS);
+        let tail: String = text.chars().skip(skip).collect();
+        eprint!("\r\x1b[2K~ {tail}");
+        let _ = std::io::stderr().flush();
+        self.draft_shown = true;
+    }
+
+    /// Erases a draft shown in place.
+    fn clear_draft(&mut self) {
+        if self.draft_shown {
+            eprint!("\r\x1b[2K");
+            let _ = std::io::stderr().flush();
+            self.draft_shown = false;
+        }
+    }
+}
+
 /// Sorts a failure to enumerate the host's input devices.
 fn list_error(e: cpal::DevicesError) -> BunsenError {
     BunsenError::sys("could not list the input devices").with_cause(e)
@@ -278,25 +428,6 @@ fn device_id(device: &Device) -> String {
         .id()
         .map(|id| id.1)
         .unwrap_or_else(|_| "?".to_string())
-}
-
-/// Pushes `samples` as one block, anchored at `time` when the host gave
-/// one.
-fn push(
-    transcript: &mut TranscriptStream,
-    samples: &[f32],
-    time: Option<f64>,
-) -> BunsenResult<()> {
-    log::trace!(
-        "push: {} samples{}",
-        samples.len(),
-        time.map(|t| format!(" captured at {t:.3} s"))
-            .unwrap_or_default()
-    );
-    match time {
-        Some(time) => transcript.anchor_write_read(time, samples),
-        None => transcript.write_read(samples),
-    }
 }
 
 /// Prints the host's default input device, then each input device that
@@ -450,5 +581,25 @@ fn downmix(
         SampleFormat::F64 => frames::<f64>(data, channels, out),
         // `pick_config` admits only the formats above.
         other => log::error!("capture: unreadable sample format {other}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Blocks are taken whole until the limit, then cut to it, then empty.
+    #[test]
+    fn test_take() {
+        let block = |n: usize| Block {
+            time: None,
+            samples: vec![0.0; n],
+        };
+        let mut captured = 0;
+        assert_eq!(take(block(4), &mut captured, Some(10)).samples.len(), 4);
+        assert_eq!(take(block(8), &mut captured, Some(10)).samples.len(), 6);
+        assert_eq!(take(block(8), &mut captured, Some(10)).samples.len(), 0);
+        assert_eq!(captured, 10);
+        assert_eq!(take(block(8), &mut captured, None).samples.len(), 8);
     }
 }

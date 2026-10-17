@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "book-snippets"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "burn",
@@ -1415,7 +1415,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "bunsen"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "assert_float_eq",
  "bunsen",
@@ -1463,18 +1463,19 @@ dependencies = [
 
 [[package]]
 name = "bunsen-app"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "burn",
  "clap",
  "log",
  "stderrlog",
+ "tempfile",
 ]
 
 [[package]]
 name = "bunsen-arrow-dataloaders"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "arrow 60.0.0",
  "burn",
@@ -1488,20 +1489,23 @@ dependencies = [
 
 [[package]]
 name = "bunsen-asr"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-app",
  "burn",
  "clap",
+ "cpal",
+ "ctrlc",
  "log",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
 name = "bunsen-bundled-parakeet"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen-fetch",
  "burn",
@@ -1512,7 +1516,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-bundled-qwen3-asr"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen-fetch",
  "burn",
@@ -1523,7 +1527,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-bundled-silero"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen-fetch",
  "burn",
@@ -1534,7 +1538,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-bundled-whisper"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen-fetch",
  "burn",
@@ -1545,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-contracts-macros"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1554,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-fetch"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "document-features",
  "sha2 0.11.0",
@@ -1564,7 +1568,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-firehose"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "burn",
@@ -1580,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "bunsen-firehose-image"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-firehose",
@@ -2161,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "burn_bug_repro"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "burn",
@@ -8149,7 +8153,7 @@ dependencies = [
 
 [[package]]
 name = "parakeet-model-validation"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-bundled-parakeet",
@@ -9084,7 +9088,7 @@ dependencies = [
 
 [[package]]
 name = "qwen3-asr-model-validation"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-bundled-qwen3-asr",
@@ -10427,7 +10431,7 @@ dependencies = [
 
 [[package]]
 name = "silero-bench"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "burn",
@@ -10437,7 +10441,7 @@ dependencies = [
 
 [[package]]
 name = "silero-model-validation"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-bundled-silero",
@@ -12674,21 +12678,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "whisper-cli"
-version = "0.38.0"
-dependencies = [
- "bunsen",
- "bunsen-app",
- "burn",
- "clap",
- "cpal",
- "ctrlc",
- "log",
-]
-
-[[package]]
 name = "whisper-model-validation"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "bunsen",
  "bunsen-bundled-whisper",

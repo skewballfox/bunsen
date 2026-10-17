@@ -1,18 +1,4 @@
-//! # A windowed-sinc resampler
-//!
-//! The capture path's rate to the model's. bunsen decodes files at the
-//! model's rate and declines to resample them, because a resample is a
-//! signal-processing decision the caller makes deliberately; a microphone
-//! runs at whatever rate its host offers, so `live` makes that decision
-//! here, once, and only when the device would not open at the model's
-//! rate.
-//!
-//! Each output sample is the input convolved with a Blackman-windowed sinc
-//! centred on its position, cut off at the lower of the two Nyquist rates,
-//! and normalized to unit DC gain for its phase. The kernel is symmetric
-//! and output sample `n` sits at input position `n * in / out` exactly, so
-//! there is no delay to account for, and the output is the same whatever
-//! the pushes were cut into.
+//! A windowed-sinc resampler, for capture at a rate other than the model's.
 
 use std::f64::consts::PI;
 
@@ -21,6 +7,19 @@ use std::f64::consts::PI;
 const HALF_TAPS: usize = 16;
 
 /// A streaming rate converter: feed input in any pieces, collect output.
+///
+/// The capture path's rate to the model's. bunsen decodes files at the
+/// model's rate and declines to resample them, because a resample is a
+/// signal-processing decision the caller makes deliberately; a microphone
+/// runs at whatever rate its host offers, so `live` makes that decision
+/// here, once, and only when the device would not open at the model's rate.
+///
+/// Each output sample is the input convolved with a Blackman-windowed sinc
+/// centred on its position, cut off at the lower of the two Nyquist rates,
+/// and normalized to unit DC gain for its phase. The kernel is symmetric
+/// and output sample `n` sits at input position `n * in / out` exactly, so
+/// there is no delay to account for, and the output is the same whatever
+/// the pushes were cut into.
 #[derive(Debug, Clone)]
 pub struct Resampler {
     in_rate: usize,

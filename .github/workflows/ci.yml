@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# A push to a pull request cancels that pull request's run still in
+# progress; each push to main runs in a group of its own, and is never
+# cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -29,7 +36,7 @@ jobs:
       - name: Module docs must render
         run: python3 tools/check_hidden_module_docs.py crates
       - run: rustup toolchain install stable --profile minimal --component clippy
-      # `whisper-cli live` captures through `cpal`, whose Linux backend
+      # `bunsen-asr live` captures through `cpal`, whose Linux backend
       # links ALSA.
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       # The caches as in the `test` job, which explains them. Clippy compiles
@@ -40,12 +47,14 @@ jobs:
         with:
           prefix-key: v1-rust
           cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1
         with:
           version: 1.2.1
           cache-key-prefix: kache2-clippy
           cache-executables: true
           pr-comment: false
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --no-deps -- -D warnings
 
   book:
@@ -62,12 +71,14 @@ jobs:
         with:
           prefix-key: v1-rust
           cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1
         with:
           version: 1.2.1
           cache-key-prefix: kache2-book
           cache-executables: true
           pr-comment: false
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       # Keep these versions in step with `Makefile.toml`'s `ensure-mdbook-*`.
       - uses: taiki-e/install-action@v2
         with:
@@ -97,7 +108,7 @@ jobs:
       - name: Install Toolchain
         run: rustup toolchain install stable --profile minimal
 
-      # `whisper-cli live` captures through `cpal`, whose Linux backend
+      # `bunsen-asr live` captures through `cpal`, whose Linux backend
       # links ALSA.
       - name: Install ALSA headers
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
@@ -121,11 +132,19 @@ jobs:
       # workspace crates in it are those of the first run on that lockfile.
       # On a new lockfile it starts from the newest older store. The action
       # skips itself, and the build runs uncached, if it cannot fetch kache.
+      #
+      # Only pushes to main save either cache; pull requests restore them.
+      # A pull request's run can restore only caches saved from its own
+      # branch or from main, and the repository's caches share 10 GB, the
+      # least recently used evicted first: stores saved from several open
+      # pull requests (about 4.5 GB each, across the jobs) would evict
+      # main's, and each other's.
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-rust
           cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: kache
         uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1
@@ -134,6 +153,7 @@ jobs:
           cache-key-prefix: kache2-test
           cache-executables: true
           pr-comment: true
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
 
       # kache caches what rustc writes, not what a build script does: cargo
       # runs a build script whenever `target/` has no record of it, which is
@@ -198,10 +218,15 @@ jobs:
       # `bunsen-firehose` relied on `bunsen` enabling `burn/std` and failed to
       # publish at v0.31.0. One `cargo check` per crate reproduces the isolated
       # resolution; several `-p` flags in one invocation would unify again.
+      # A crate with a library checks it; `bunsen-asr` is binaries only.
       - name: Published crates build in isolation
         run: |
           for manifest in crates/public/*/Cargo.toml; do
-            cargo check --manifest-path "$manifest" --lib
+            if [ -f "$(dirname "$manifest")/src/lib.rs" ]; then
+              cargo check --manifest-path "$manifest" --lib
+            else
+              cargo check --manifest-path "$manifest" --bins
+            fi
           done
 
       # The disk left after the build, with kache's store beside `target/`.
