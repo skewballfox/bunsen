@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0](https://github.com/skewballfox/bunsen/compare/bunsen-app-v0.42.0...bunsen-app-v0.43.0) - 2026-11-20
+
+### Added
+
+- *(bunsen-app)* `--min-precision` and `--init-dtype` ([#731](https://github.com/skewballfox/bunsen/pull/731))
+
+### Other
+
+- crutcher/precision flags examples ([#733](https://github.com/skewballfox/bunsen/pull/733))
+
 ## [0.42.0](https://github.com/zspacelabs/bunsen/compare/bunsen-app-v0.41.0...bunsen-app-v0.42.0) - 2026-11-13
 
 ### Added
